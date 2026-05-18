@@ -1,0 +1,20 @@
+{
+  "name": "Peak Fitness",
+  "short_name": "Peak Fitness",
+  "description": "Din personliga träningsapp",
+  "start_url": "./alpinfys.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f7f4",
+  "theme_color": "#e8440a",
+  "lang": "sv",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

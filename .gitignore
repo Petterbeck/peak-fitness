@@ -1,0 +1,24 @@
+# Claude Code-internt (sessionsbundet, ska inte versionhanteras)
+.claude/
+
+# OS-skräp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor-skräp
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Loggar
+*.log
+npm-debug.log*
+
+# Beroenden (om vi nån gång lägger till)
+node_modules/
+
+# Lokala miljövariabler
+.env
+.env.local
