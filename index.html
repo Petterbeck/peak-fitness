@@ -134,12 +134,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
 .cal-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:12px;border-radius:8px;cursor:pointer;color:var(--text-2);position:relative;font-weight:600}
 .cal-day.has-w{background:var(--surface-2);color:var(--text-1)}
-.cal-day.has-w::after{content:'';width:4px;height:4px;background:var(--accent);border-radius:50%;position:absolute;bottom:3px;left:50%;transform:translateX(-50%)}
 .cal-day.today{background:var(--accent);color:#fff;font-weight:800}
-.cal-day.today::after{background:#fff}
 .cal-day:hover{background:var(--surface-3)}
 .cal-day.today:hover{background:var(--accent);opacity:0.92}
-.cal-done-mark{position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:var(--accent-3);box-shadow:0 0 0 1.5px var(--surface)}
+.cal-dots{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);display:flex;gap:2px;align-items:center}
+.cal-dot{width:5px;height:5px;border-radius:50%;display:inline-block}
+.cal-day.today .cal-dot{box-shadow:0 0 0 1px rgba(255,255,255,0.3)}
+.cal-dots-more{font-size:8px;font-weight:800;color:var(--text-2);margin-left:1px}
+.cal-day.today .cal-dots-more{color:#fff}
+.cal-done-mark{position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:var(--accent-3);box-shadow:0 0 0 1.5px var(--surface)}
 
 /* SCHEDULE */
 .sched-row{background:var(--surface);border-radius:var(--r);padding:11px 13px;border:0.5px solid var(--border);display:flex;align-items:center;gap:11px}
@@ -211,6 +214,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .pass-hero{border-radius:var(--r);padding:14px 16px;color:#fff;position:relative;overflow:hidden}
 .pass-hero::after{content:'';position:absolute;top:-30px;right:-30px;width:110px;height:110px;background:rgba(255,255,255,0.1);border-radius:50%}
 .pass-hero-content{position:relative;z-index:2}
+.pass-hero-content .tag{background:rgba(255,255,255,0.22)!important;color:#fff!important;font-weight:700;backdrop-filter:blur(4px)}
+.pass-hero-content #dd-desc{color:#fff;opacity:0.95!important}
 
 /* AI ASK */
 .ai-card{background:linear-gradient(135deg,rgba(91,82,240,0.06),rgba(0,200,150,0.04));border:0.5px solid rgba(91,82,240,0.18);border-radius:var(--r);padding:13px}
@@ -230,6 +235,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .ex-row-name{font-size:13px;font-weight:700}
 .ex-row-meta{font-size:11px;color:var(--text-2);margin-top:1px}
 .fav-btn{width:34px;height:34px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border-md);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-2);font-size:17px;transition:all 0.14s;flex-shrink:0}
+.remove-btn{width:36px;height:36px;border-radius:50%;background:#ffe4dc;border:1.5px solid #e8200a;color:#e8200a;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;flex-shrink:0;padding:0;transition:all 0.14s}
+.remove-btn:hover{background:#e8200a;color:#fff}
+.remove-btn i{font-size:18px;line-height:1}
+[data-theme="dark"] .remove-btn{background:#3a1a0e;border-color:#e8440a;color:#ff7a4a}
+[data-theme="dark"] .remove-btn:hover{background:#e8200a;color:#fff}
 .fav-btn:hover{color:#f5a800}
 .fav-btn.on{background:#fff7e0;border-color:#f5c842;color:#f5a800;box-shadow:0 0 0 3px rgba(245,168,0,0.12)}
 [data-theme="dark"] .fav-btn.on{background:#2a1e05;border-color:#7a5a10;color:#f5a800}
@@ -239,8 +249,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .pass-pick-row.selected{border-color:var(--accent);background:rgba(232,68,10,0.04)}
 
 /* CHIPS */
-.chip-row{display:flex;gap:6px;overflow-x:auto;padding:2px 0;scrollbar-width:none}
-.chip-row::-webkit-scrollbar{display:none}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;padding:2px 0}
 .filter-chip{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--r-pill);padding:6px 13px;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-1);white-space:nowrap;flex-shrink:0}
 .filter-chip.active{background:var(--text-1);color:var(--bg)}
 
@@ -254,8 +263,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .field-label{font-size:11px;font-weight:700;color:var(--text-2);margin-bottom:5px;display:block;text-transform:uppercase;letter-spacing:0.04em}
 .field-input{background:var(--surface-2);border:1.5px solid transparent;border-radius:var(--r-sm);padding:11px 13px;font-size:14px;font-weight:600;color:var(--text-1);outline:none;font-family:inherit;width:100%;transition:border-color 0.14s}
 .field-input:focus{border-color:var(--accent)}
-.field-select{background:var(--surface-2);border:1.5px solid transparent;border-radius:var(--r-sm);padding:11px 13px;font-size:14px;font-weight:600;color:var(--text-1);outline:none;font-family:inherit;width:100%;-webkit-appearance:none;cursor:pointer}
+.field-select{background:var(--surface-2);border:1.5px solid transparent;border-radius:var(--r-sm);padding:11px 13px;font-size:14px;font-weight:600;color:var(--text-1);outline:none;font-family:inherit;width:100%;-webkit-appearance:none;appearance:none;cursor:pointer;background-image:url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2368655c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");background-repeat:no-repeat;background-position:right 13px center;padding-right:36px}
 .field-select:focus{border-color:var(--accent)}
+.field-select option{background:var(--surface);color:var(--text-1);font-weight:600}
+[data-theme="dark"] .field-select option{background:#181815;color:#f2f0ea}
 .search-bar{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--r-pill);padding:10px 15px;font-size:14px;color:var(--text-1);outline:none;width:100%;font-family:inherit}
 .search-bar:focus{border-color:var(--accent)}
 .notice{background:linear-gradient(135deg,rgba(91,82,240,0.06),rgba(0,200,150,0.04));border:0.5px solid rgba(91,82,240,0.16);border-radius:var(--r);padding:12px 14px;font-size:13px;line-height:1.5}
@@ -302,7 +313,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="hero" id="home-hero">
     <div class="hero-z" id="home-hero-content"></div>
   </div>
-  <div class="section-head"><div class="section-title">Veckans framsteg</div><button class="section-link" onclick="navigate('page-stats')">Statistik →</button></div>
+  <div class="section-head"><div class="section-title">Mina framsteg</div><button class="section-link" onclick="navigate('page-stats')">Detaljer →</button></div>
   <div class="stats-grid">
     <div class="stat-card"><div class="ic" style="background:var(--g1)"><i class="ti ti-bolt"></i></div><div class="sv">3<span>/5</span></div><div class="sl">Pass</div><div class="st"><i class="ti ti-trending-up"></i>+1 vs förra v</div></div>
     <div class="stat-card"><div class="ic" style="background:var(--g2)"><i class="ti ti-barbell"></i></div><div class="sv">12,4<span>t</span></div><div class="sl">Volym</div><div class="st"><i class="ti ti-trending-up"></i>+8%</div></div>
@@ -325,15 +336,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <!-- PLAN -->
 <div class="page" id="page-plan">
   <div id="plan-main" style="display:flex;flex-direction:column;gap:13px">
-    <div class="page-title">Planering</div>
+    <div class="page-title">Planera</div>
     <div class="plan-tabs">
-      <button class="plan-tab active" onclick="setPlanTab(this,'tab-passes')">Träningspass</button>
-      <button class="plan-tab" onclick="setPlanTab(this,'tab-schema')">Schema</button>
+      <button class="plan-tab active" onclick="setPlanTab(this,'tab-schema')">Schema</button>
+      <button class="plan-tab" onclick="setPlanTab(this,'tab-passes')">Pass</button>
+      <button class="plan-tab" onclick="setPlanTab(this,'tab-exercises')">Övningar</button>
     </div>
-    <div id="tab-passes" style="display:flex;flex-direction:column;gap:10px">
-      <div style="display:flex;gap:8px">
-        <button class="btn-primary" onclick="openNewPass()" style="flex:1"><i class="ti ti-plus"></i> Nytt träningspass</button>
-        <button class="btn-ghost" onclick="openModal('m-add-form')" style="flex:0 0 auto;padding:0 14px" title="Ny träningsform"><i class="ti ti-folder-plus"></i></button>
+    <div id="tab-passes" style="display:none;flex-direction:column;gap:10px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-primary" onclick="openNewPass()" style="flex:1;min-width:160px"><i class="ti ti-plus"></i> Nytt träningspass</button>
+        <button class="btn-ghost" onclick="openModal('m-add-form')" style="flex:1;min-width:140px;font-size:12px;font-weight:700"><i class="ti ti-folder-plus"></i> Ny träningsform</button>
       </div>
       <input class="search-bar" id="pass-search" placeholder="Sök pass..." oninput="renderPassList()">
       <div>
@@ -350,12 +362,43 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       </div>
       <div id="pass-list" style="display:flex;flex-direction:column;gap:8px"></div>
     </div>
-    <div id="tab-schema" style="display:none;flex-direction:column;gap:8px">
+    <div id="tab-schema" style="display:flex;flex-direction:column;gap:12px">
+      <div class="cal-wrap">
+        <div class="cal-nav">
+          <button class="cal-nav-btn" onclick="changeMonth(-1)"><i class="ti ti-chevron-left"></i></button>
+          <div class="cal-month" id="cal-month-label">Maj 2026</div>
+          <button class="cal-nav-btn" onclick="changeMonth(1)"><i class="ti ti-chevron-right"></i></button>
+        </div>
+        <div class="cal-hdr"><span>M</span><span>T</span><span>O</span><span>T</span><span>F</span><span>L</span><span>S</span></div>
+        <div class="cal-grid" id="cal-grid"></div>
+      </div>
+      <div class="section-title" style="padding:0 2px">Den här veckan</div>
       <div id="week-schedule" style="display:flex;flex-direction:column;gap:8px"></div>
       <div class="coach-bubble" style="background:linear-gradient(135deg,rgba(91,82,240,0.06),rgba(0,200,150,0.03));border-color:rgba(91,82,240,0.16)">
         <div class="coach-av"><i class="ti ti-wand"></i></div>
-        <div class="coach-c"><div class="coach-n">Schemaförslag</div><div class="coach-m">3× styrka + 2× löpning/v baserat på dina mål.</div><button class="btn-sm btn-acc" style="margin-top:9px">Generera</button></div>
+        <div class="coach-c"><div class="coach-n">Schemaförslag (AI)</div><div class="coach-m">Snart: AI-coachen föreslår ett 4-veckors schema baserat på dina mål.</div><button class="btn-sm btn-acc" style="margin-top:9px" disabled>Generera (kommer i etapp 4)</button></div>
       </div>
+    </div>
+    <div id="tab-exercises" style="display:none;flex-direction:column;gap:10px">
+      <div class="section-head">
+        <div style="font-size:16px;font-weight:800;padding:0 2px">Övningar</div>
+        <button class="btn-sm btn-acc" onclick="openNewExercise()"><i class="ti ti-plus"></i> Ny</button>
+      </div>
+      <input class="search-bar" id="ex-search" placeholder="Sök övning..." oninput="renderExercises()">
+      <div>
+        <div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;padding:0 2px 4px">Muskel / område</div>
+        <div class="chip-row" id="ex-muscle-chips"></div>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;padding:0 2px 4px">Träningsform / typ</div>
+        <div class="chip-row" id="ex-form-chips"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:2px;font-size:11px;color:var(--text-2)">
+        <span id="ex-count">0 övningar</span>
+        <button onclick="clearExFilters()" style="background:none;border:none;color:var(--accent);font-size:11px;font-weight:700;cursor:pointer">Rensa filter</button>
+      </div>
+      <div id="ex-list" style="display:flex;flex-direction:column;gap:6px"></div>
+      <div class="notice" style="margin-top:8px">💡 I framtiden: ladda upp Excel/PDF med övningar, eller bild/video där AI föreslår namn och taggar.</div>
     </div>
   </div>
 
@@ -365,7 +408,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <button class="back-btn" onclick="backToPlan()"><i class="ti ti-arrow-left"></i> Tillbaka</button>
       <div class="detail-title" id="dd-title">Passnamn</div>
       <button class="btn-sm" onclick="openEditPass()" style="background:var(--surface-2);color:var(--text-1)" title="Redigera pass"><i class="ti ti-edit"></i></button>
-      <button class="btn-sm btn-acc" onclick="openModal('m-add-ex')"><i class="ti ti-plus"></i> Övning</button>
+      <button class="btn-sm btn-acc" onclick="openPickExerciseModal()"><i class="ti ti-plus"></i> Övning</button>
     </div>
     <div class="pass-hero" id="dd-hero">
       <div class="pass-hero-content">
@@ -385,22 +428,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       </div>
     </div>
     <div id="dd-exercises"></div>
-    <button class="btn-ghost" onclick="openModal('m-add-ex')"><i class="ti ti-plus"></i> Lägg till övning</button>
+    <button class="btn-ghost" onclick="openPickExerciseModal()"><i class="ti ti-adjustments-horizontal"></i> Justera övningar i passet</button>
   </div>
 </div>
 
 <!-- TRÄNA -->
 <div class="page" id="page-log">
   <div id="log-select" style="display:flex;flex-direction:column;gap:11px">
-    <div class="page-title">Träna</div>
-    <div class="cal-wrap">
-      <div class="cal-nav">
-        <button class="cal-nav-btn" onclick="changeMonth(-1)"><i class="ti ti-chevron-left"></i></button>
-        <div class="cal-month" id="cal-month-label">Maj 2026</div>
-        <button class="cal-nav-btn" onclick="changeMonth(1)"><i class="ti ti-chevron-right"></i></button>
-      </div>
-      <div class="cal-hdr"><span>M</span><span>T</span><span>O</span><span>T</span><span>F</span><span>L</span><span>S</span></div>
-      <div class="cal-grid" id="cal-grid"></div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="back-btn" onclick="navigate('page-home')"><i class="ti ti-arrow-left"></i> Hem</button>
+      <div class="page-title" style="flex:1">Träna</div>
     </div>
     <div class="section-title" style="padding:0 2px">Välj pass</div>
     <div id="log-pass-list"></div>
@@ -463,27 +500,49 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="coach-input-row"><input class="coach-input" id="coach-text" placeholder="Fråga din coach..."><button class="coach-send"><i class="ti ti-arrow-up"></i></button></div>
 </div>
 
-<!-- ÖVNINGSBANK -->
-<div class="page" id="page-exercises">
-  <div class="section-head">
-    <div class="page-title">Övningar</div>
-    <button class="btn-sm btn-acc" onclick="openNewExercise()"><i class="ti ti-plus"></i> Ny</button>
+<!-- MIN TRÄNINGSLOGG -->
+<div class="page" id="page-history">
+  <div class="page-title">Min träningslogg</div>
+  <div class="card" style="display:flex;align-items:center;gap:8px;padding:10px 12px">
+    <button class="cal-nav-btn" onclick="changeHistoryWeek(-1)"><i class="ti ti-chevron-left"></i></button>
+    <div style="flex:1;text-align:center">
+      <div style="font-size:13px;font-weight:800" id="hist-week-label">Vecka</div>
+      <div style="font-size:11px;color:var(--text-2)" id="hist-week-range">–</div>
+    </div>
+    <button class="cal-nav-btn" onclick="changeHistoryWeek(1)" id="hist-next-btn"><i class="ti ti-chevron-right"></i></button>
   </div>
-  <input class="search-bar" id="ex-search" placeholder="Sök övning..." oninput="renderExercises()">
-  <div>
-    <div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;padding:0 2px 4px">Muskel / område</div>
-    <div class="chip-row" id="ex-muscle-chips"></div>
+  <div class="card" id="hist-summary" style="padding:0;overflow:hidden">
+    <div style="padding:13px 15px;background:var(--g2);color:#fff">
+      <div style="font-size:11px;font-weight:800;opacity:0.85;text-transform:uppercase;letter-spacing:0.1em">Sammanfattning</div>
+      <div style="display:flex;align-items:baseline;gap:8px;margin-top:5px">
+        <div id="hist-vol-tag" style="font-size:20px;font-weight:800">–</div>
+        <div style="font-size:13px;opacity:0.85" id="hist-vol-desc">träningsvecka</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+      <div style="padding:11px 13px;border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border)">
+        <div style="font-size:10px;color:var(--text-2);font-weight:700;text-transform:uppercase">Pass</div>
+        <div style="font-size:18px;font-weight:800" id="hist-count">0</div>
+      </div>
+      <div style="padding:11px 13px;border-bottom:0.5px solid var(--border)">
+        <div style="font-size:10px;color:var(--text-2);font-weight:700;text-transform:uppercase">Total tid</div>
+        <div style="font-size:18px;font-weight:800" id="hist-time">0 min</div>
+      </div>
+      <div style="padding:11px 13px;border-right:0.5px solid var(--border)">
+        <div style="font-size:10px;color:var(--text-2);font-weight:700;text-transform:uppercase">Distans</div>
+        <div style="font-size:18px;font-weight:800" id="hist-dist">0 km</div>
+      </div>
+      <div style="padding:11px 13px">
+        <div style="font-size:10px;color:var(--text-2);font-weight:700;text-transform:uppercase">Snittkänsla</div>
+        <div style="font-size:18px;font-weight:800" id="hist-feel">–</div>
+      </div>
+    </div>
+    <div style="padding:9px 13px;background:var(--surface-2);font-size:11px;color:var(--text-2);line-height:1.5">
+      <span id="hist-vol-detail">Volym styrka: – kg · Volym kondition: – km</span>
+    </div>
   </div>
-  <div>
-    <div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;padding:0 2px 4px">Träningsform / typ</div>
-    <div class="chip-row" id="ex-form-chips"></div>
-  </div>
-  <div style="display:flex;justify-content:space-between;align-items:center;padding:2px;font-size:11px;color:var(--text-2)">
-    <span id="ex-count">0 övningar</span>
-    <button onclick="clearExFilters()" style="background:none;border:none;color:var(--accent);font-size:11px;font-weight:700;cursor:pointer">Rensa filter</button>
-  </div>
-  <div id="ex-list" style="display:flex;flex-direction:column;gap:6px"></div>
-  <div class="notice" style="margin-top:8px">💡 I framtiden: ladda upp Excel/PDF med övningar, eller bild/video där AI föreslår namn och taggar.</div>
+  <div class="section-title" style="padding:0 2px">Veckans pass</div>
+  <div id="hist-workout-list" style="display:flex;flex-direction:column;gap:6px"></div>
 </div>
 
 <!-- PROFIL -->
@@ -539,9 +598,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <div class="bottomnav" id="bottomnav">
   <button class="nav-item active" onclick="navigate('page-home')" id="nav-home"><i class="ti ti-home"></i><span>Hem</span></button>
-  <button class="nav-item nav-cta" onclick="navigate('page-log')" id="nav-log"><i class="ti ti-player-play-filled"></i><span>Träna</span></button>
-  <button class="nav-item" onclick="navigate('page-plan')" id="nav-plan"><i class="ti ti-layout-grid"></i><span>Plan</span></button>
-  <button class="nav-item" onclick="navigate('page-exercises')" id="nav-exercises"><i class="ti ti-barbell"></i><span>Övningar</span></button>
+  <button class="nav-item" onclick="navigate('page-plan')" id="nav-plan"><i class="ti ti-layout-grid"></i><span>Planera</span></button>
+  <button class="nav-item" onclick="navigate('page-history')" id="nav-history"><i class="ti ti-book"></i><span>Min logg</span></button>
   <button class="nav-item" onclick="navigate('page-coach')" id="nav-coach"><i class="ti ti-sparkles"></i><span>Coach</span></button>
 </div>
 
@@ -557,10 +615,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
+<div class="modal" id="m-workout-detail" onclick="closeBg(event,'m-workout-detail')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <button class="back-btn" onclick="closeModal('m-workout-detail')"><i class="ti ti-arrow-left"></i> Tillbaka</button>
+      <div class="modal-title" id="wd-title" style="margin:0;flex:1">Pass-logg</div>
+    </div>
+    <div id="wd-meta" style="background:var(--surface-2);border-radius:var(--r);padding:11px 13px;margin-bottom:12px;font-size:13px;line-height:1.5"></div>
+    <div id="wd-exercises" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div id="wd-note" style="margin-top:12px;font-size:13px;color:var(--text-2);font-style:italic;padding:0 2px"></div>
+    <button class="btn-ghost" onclick="deleteWorkoutLog()" style="margin-top:14px;color:#e8200a;border-color:#e8200a;font-weight:700"><i class="ti ti-trash"></i> Ta bort denna logg</button>
+  </div>
+</div>
+
 <div class="modal" id="m-day" onclick="closeBg(event,'m-day')">
   <div class="modal-sheet"><div class="modal-handle"></div>
     <div class="modal-title" id="day-title">Datum</div>
+    <div id="day-completed-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
     <div id="day-planned-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px"></div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <button class="btn-sm" onclick="addRestDayAndRefresh()" style="flex:1;background:var(--surface-2);color:var(--text-1);font-weight:700;padding:9px"><i class="ti ti-zzz"></i> Markera som vilodag</button>
+    </div>
     <div class="section-title" style="padding:0 2px 6px;font-size:13px">Lägg till pass denna dag</div>
     <input class="search-bar" id="day-search" placeholder="Sök pass..." oninput="renderDayPassList()" style="margin-bottom:8px">
     <div id="day-pass-list" style="display:flex;flex-direction:column;gap:5px"></div>
@@ -616,6 +691,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
+<div class="modal" id="m-pick-ex" onclick="closeBg(event,'m-pick-ex')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Justera övningar i passet</div>
+    <div style="font-size:12px;color:var(--text-2);margin-bottom:10px;line-height:1.4">Tryck på en övning för att lägga till. Tryck igen för att ta bort.</div>
+    <input class="search-bar" id="pick-search" placeholder="Sök övning..." oninput="renderPickExList()" style="margin-bottom:10px">
+    <div>
+      <div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;padding:0 2px 4px">Muskel</div>
+      <div class="chip-row" id="pick-muscle-chips" style="margin-bottom:8px"></div>
+    </div>
+    <div>
+      <div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;padding:0 2px 4px">Träningsform / typ</div>
+      <div class="chip-row" id="pick-form-chips" style="margin-bottom:10px"></div>
+    </div>
+    <div id="pick-ex-list" style="display:flex;flex-direction:column;gap:5px;margin-bottom:10px"></div>
+    <button class="btn-ghost" onclick="createAndAddToPass()" style="border-color:var(--border)"><i class="ti ti-plus"></i> Hittar inte? Skapa ny övning</button>
+  </div>
+</div>
+
 <div class="modal" id="m-ex-edit" onclick="closeBg(event,'m-ex-edit')">
   <div class="modal-sheet"><div class="modal-handle"></div>
     <div class="modal-title" id="ex-modal-title">Ny övning</div>
@@ -635,7 +728,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div><label class="field-label">Anteckning / utförande</label><input class="field-input" id="ex-f-note" placeholder="Kort beskrivning av övningen"></div>
       <div style="display:flex;gap:8px">
         <button class="btn-primary" onclick="saveExerciseEdit()" style="flex:1"><i class="ti ti-check"></i> Spara</button>
-        <button class="btn-ghost" onclick="deleteExercise()" id="ex-delete-btn" style="flex:0 0 auto;color:#e8200a;border-color:#e8200a44"><i class="ti ti-trash"></i></button>
+        <button class="btn-ghost" onclick="deleteExercise()" id="ex-delete-btn" style="flex:0 0 auto;color:#e8200a;border-color:#e8200a;background:transparent;font-weight:700"><i class="ti ti-trash"></i> Ta bort</button>
       </div>
     </div>
   </div>
@@ -1075,6 +1168,10 @@ function addPlan(iso,passId){
   plannedWorkouts.push({id:'pw'+Date.now()+Math.floor(Math.random()*1000),date:iso,passId,formId:r.form.id,notes:''});
   saveState();
 }
+function addRestDay(iso){
+  plannedWorkouts.push({id:'pw'+Date.now()+Math.floor(Math.random()*1000),date:iso,passId:null,isRest:true,notes:'Vila'});
+  saveState();
+}
 function removePlan(planId){
   plannedWorkouts=plannedWorkouts.filter(p=>p.id!==planId);
   saveState();
@@ -1144,16 +1241,24 @@ function resetState(){
 
 /* ========== NAVIGATION ========== */
 function navigate(id){
+  // Bakåtkompabilitet: omdirigera gamla page-exercises → page-plan + Övningar-tab
+  if(id==='page-exercises'){
+    navigate('page-plan');
+    setPlanTab(null,'tab-exercises');
+    return;
+  }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
+  const target=document.getElementById(id);
+  if(!target){console.warn('Unknown page:',id);return;}
+  target.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  const m={'page-home':'nav-home','page-plan':'nav-plan','page-log':'nav-log','page-exercises':'nav-exercises','page-coach':'nav-coach','page-profile':'nav-home','page-stats':'nav-home'};
+  const m={'page-home':'nav-home','page-plan':'nav-plan','page-log':'nav-home','page-history':'nav-history','page-coach':'nav-coach','page-profile':'nav-home','page-stats':'nav-home'};
   if(m[id]) document.getElementById(m[id])?.classList.add('active');
   if(id==='page-stats') setTimeout(drawCharts,50);
   if(id==='page-home') renderHomeHero();
-  if(id==='page-plan'){renderPassList();renderWeekSchedule();}
-  if(id==='page-log'){renderLogPassList();renderCalendar();}
-  if(id==='page-exercises') renderExercises();
+  if(id==='page-plan'){renderWeekSchedule();renderCalendar();}
+  if(id==='page-log') renderLogPassList();
+  if(id==='page-history') renderHistory();
   if(id==='page-profile') renderLastSync();
   window.scrollTo(0,0);
 }
@@ -1180,15 +1285,21 @@ function setTheme(a,a2,a3,a4,a5,el){
 /* ========== PLAN TABS ========== */
 function setPlanTab(btn,id){
   document.querySelectorAll('.plan-tab').forEach(t=>t.classList.remove('active'));
-  btn.classList.add('active');
-  ['tab-passes','tab-schema'].forEach(t=>{
+  if(btn) btn.classList.add('active');
+  else{
+    // Aktivera rätt knapp om vi anropas programmatiskt (utan event)
+    const tabs=document.querySelectorAll('.plan-tab');
+    tabs.forEach(t=>{if(t.getAttribute('onclick')&&t.getAttribute('onclick').includes(id)) t.classList.add('active');});
+  }
+  ['tab-passes','tab-schema','tab-exercises'].forEach(t=>{
     const el=document.getElementById(t);
     if(!el) return;
     if(t===id){el.style.display='flex';el.style.flexDirection='column';}
     else el.style.display='none';
   });
   if(id==='tab-passes') renderPassList();
-  if(id==='tab-schema') renderWeekSchedule();
+  if(id==='tab-schema'){renderWeekSchedule();renderCalendar();}
+  if(id==='tab-exercises') renderExercises();
 }
 
 /* ========== TRAINING FORMS ========== */
@@ -1422,7 +1533,7 @@ function renderDetailExs(pass){
         <button class="fav-btn ${ex.fav?'on':''}" onclick="event.stopPropagation();toggleExerciseFav('${ex.id}')" title="${ex.fav?'Ta bort favorit':'Markera som favorit'}">
           <i class="ti ${ex.fav?'ti-star-filled':'ti-star'}"></i>
         </button>
-        <button onclick="event.stopPropagation();removeRefFromPass('${pass.id}',${refIdx})" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:14px;padding:4px"><i class="ti ti-x"></i></button>
+        <button class="remove-btn" onclick="event.stopPropagation();removeRefFromPass('${pass.id}',${refIdx})" title="Ta bort från passet"><i class="ti ti-trash"></i></button>
       </div>`;
     });
   });
@@ -1438,13 +1549,98 @@ function removeRefFromPass(passId,refIdx){
 }
 
 function addExCat(muscle){
-  // Pre-välj muskelkategorin i add-ex modalen (om ny övning skapas)
-  const sel=document.getElementById('ne-cat');
-  if(sel){
-    const opt=Array.from(sel.options).find(o=>o.value===muscle||o.textContent===muscle);
-    if(opt) sel.value=opt.value;
+  // Öppna bank-väljaren med förvald muskel-filter
+  pickFilter={muscle:muscle||'',form:'',q:''};
+  const s=document.getElementById('pick-search');
+  if(s) s.value='';
+  renderPickExList();
+  openModal('m-pick-ex');
+}
+
+/* ========== PICK EXERCISE FROM BANK (för pass-bygge) ========== */
+let pickFilter={muscle:'',form:'',q:''};
+
+function renderPickMuscleChips(){
+  const c=document.getElementById('pick-muscle-chips');
+  if(!c) return;
+  c.innerHTML=`<button class="filter-chip ${!pickFilter.muscle?'active':''}" onclick="setPickMuscle('')">Alla</button>`+
+    MUSCLE_TAGS.map(m=>`<button class="filter-chip ${pickFilter.muscle===m?'active':''}" onclick="setPickMuscle('${m}')">${m}</button>`).join('');
+}
+function renderPickFormChips(){
+  const c=document.getElementById('pick-form-chips');
+  if(!c) return;
+  c.innerHTML=`<button class="filter-chip ${!pickFilter.form?'active':''}" onclick="setPickForm('')">Alla</button>`+
+    FORM_TAGS.map(t=>`<button class="filter-chip ${pickFilter.form===t.id?'active':''}" onclick="setPickForm('${t.id}')">${t.label}</button>`).join('');
+}
+function setPickMuscle(m){pickFilter.muscle=m;renderPickExList();}
+function setPickForm(f){pickFilter.form=f;renderPickExList();}
+
+function openPickExerciseModal(){
+  pickFilter={muscle:'',form:'',q:''};
+  const s=document.getElementById('pick-search');
+  if(s) s.value='';
+  renderPickExList();
+  openModal('m-pick-ex');
+}
+
+function renderPickExList(){
+  renderPickMuscleChips();
+  renderPickFormChips();
+  const q=(document.getElementById('pick-search')?.value||'').toLowerCase().trim();
+  pickFilter.q=q;
+  // Övningar som redan finns i passet — markera dem
+  const r=curPassId?findPass(curPassId):null;
+  const alreadyInPass=new Set((r?.pass?.exerciseRefs||[]).map(x=>x.exId));
+  const fil=exercises.filter(ex=>{
+    if(pickFilter.muscle&&ex.muscle!==pickFilter.muscle) return false;
+    if(pickFilter.form&&!(ex.formTags||[]).includes(pickFilter.form)) return false;
+    if(q){
+      const hay=(ex.name+' '+ex.muscle+' '+(ex.formTags||[]).join(' ')+' '+(ex.customTags||[]).join(' ')).toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  }).sort((a,b)=>(b.fav?1:0)-(a.fav?1:0)||a.name.localeCompare(b.name,'sv'));
+  const list=document.getElementById('pick-ex-list');
+  if(!list) return;
+  if(!fil.length){
+    list.innerHTML='<div style="text-align:center;color:var(--text-3);font-size:13px;padding:18px">Inga övningar matchar. Skapa ny eller rensa filter.</div>';
+    return;
   }
-  openModal('m-add-ex');
+  list.innerHTML=fil.map(ex=>{
+    const inPass=alreadyInPass.has(ex.id);
+    const firstTag=ex.formTags?.[0];
+    const grad=firstTag==='kondition'?'cardio':firstTag==='egenvikt'?'bodyweight':firstTag==='rorlighet'?'mobility':'strength';
+    return `
+    <div class="ex-row" onclick="pickExerciseToPass('${ex.id}')" style="cursor:pointer;opacity:${inPass?0.6:1}">
+      <div class="ex-row-thumb" style="background:${catGrad[grad]||catGrad.strength}"><i class="ti ti-barbell"></i></div>
+      <div class="ex-row-info">
+        <div class="ex-row-name">${ex.name}${inPass?' <span style="font-size:10px;color:var(--accent-3);font-weight:700">✓ I passet</span>':''}</div>
+        <div class="ex-row-meta">${ex.muscle} · ${ex.defaultSets}×${ex.defaultReps||'–'}</div>
+      </div>
+      ${ex.fav?'<i class="ti ti-star-filled" style="color:#f5a800;font-size:14px;margin-right:2px"></i>':''}
+      <i class="ti ${inPass?'ti-circle-minus':'ti-plus'}" style="color:${inPass?'#e8200a':'var(--accent)'};font-size:18px"></i>
+    </div>`;
+  }).join('');
+}
+
+function pickExerciseToPass(exId){
+  if(!curPassId) return;
+  const r=findPass(curPassId);
+  if(!r) return;
+  const ex=findExercise(exId);
+  if(!ex) return;
+  if(!r.pass.exerciseRefs) r.pass.exerciseRefs=[];
+  // Toggle: om övningen redan finns i passet → ta bort
+  const existingIdx=r.pass.exerciseRefs.findIndex(x=>x.exId===exId);
+  if(existingIdx>=0){
+    r.pass.exerciseRefs.splice(existingIdx,1);
+  }else{
+    r.pass.exerciseRefs.push({exId,sets:ex.defaultSets,reps:ex.defaultReps});
+  }
+  saveState();
+  renderDetailExs(r.pass);
+  // Re-render listan så markeringen "I passet" uppdateras (modalen stannar öppen)
+  renderPickExList();
 }
 
 function addExToPlan(){
@@ -1550,6 +1746,23 @@ function toggleExerciseFav(exId){
   if(curPassId){const r=findPass(curPassId);if(r) renderDetailExs(r.pass);}
 }
 
+let pendingAddToPassId=null;
+
+function createAndAddToPass(){
+  // Spara nuvarande pass-id så vi kan lägga till övningen där efter den skapats
+  pendingAddToPassId=curPassId;
+  // Förvälja den muskel som är filtrerad i bank-väljaren (om någon)
+  const preMuscle=pickFilter.muscle||MUSCLE_TAGS[0];
+  closeModal('m-pick-ex');
+  openNewExercise();
+  // Förvälja muskeln efter modal-öppnat
+  const ms=document.getElementById('ex-f-muscle');
+  if(ms&&preMuscle){
+    const opt=Array.from(ms.options).find(o=>o.value===preMuscle||o.textContent===preMuscle);
+    if(opt) ms.value=opt.value;
+  }
+}
+
 function openNewExercise(){
   editingExId=null;
   document.getElementById('ex-modal-title').textContent='Ny övning';
@@ -1590,11 +1803,23 @@ function saveExerciseEdit(){
   const note=document.getElementById('ex-f-note').value.trim();
   const custom=document.getElementById('ex-f-custom').value.split(',').map(s=>s.trim()).filter(Boolean);
   const formTags=Array.from(document.querySelectorAll('#ex-f-form-tags .filter-chip.active')).map(c=>c.getAttribute('data-tag'));
+  let savedExId=editingExId;
   if(editingExId){
     const ex=findExercise(editingExId);
     if(ex){ex.name=name;ex.muscle=muscle;ex.defaultSets=sets;ex.defaultReps=reps;ex.note=note;ex.customTags=custom;ex.formTags=formTags;}
   }else{
-    exercises.push({id:'ex'+Date.now()+Math.floor(Math.random()*10000),name,muscle,defaultSets:sets,defaultReps:reps,note,customTags:custom,formTags,mediaUrl:null,fav:false});
+    const newId='ex'+Date.now()+Math.floor(Math.random()*10000);
+    exercises.push({id:newId,name,muscle,defaultSets:sets,defaultReps:reps,note,customTags:custom,formTags,mediaUrl:null,fav:false});
+    savedExId=newId;
+  }
+  // Auto-lägg in i passet om vi kom från "Skapa ny övning"-flödet i bank-väljaren
+  if(pendingAddToPassId&&savedExId){
+    const r=findPass(pendingAddToPassId);
+    if(r){
+      if(!r.pass.exerciseRefs) r.pass.exerciseRefs=[];
+      r.pass.exerciseRefs.push({exId:savedExId,sets,reps});
+    }
+    pendingAddToPassId=null;
   }
   saveState();
   closeModal('m-ex-edit');
@@ -1778,6 +2003,19 @@ function renderHomeHero(){
   }
   // Visa första planerade passet, lista övriga om flera
   const first=planned[0];
+  // Vilodag-hantering
+  if(first.isRest){
+    const moreCount=planned.length-1;
+    el.innerHTML=`
+      <div class="hero-label">${dateLabel}</div>
+      <div class="hero-title">Vilodag 😴</div>
+      <div class="hero-sub">Återhämtning — ta hand om dig själv${moreCount>0?` · +${moreCount} mer planerat`:''}</div>
+      <div class="hero-btns">
+        <button class="hero-btn-main" onclick="navigate('page-log')"><i class="ti ti-player-play-filled"></i> Träna ändå</button>
+        <button class="hero-btn-sec" onclick="openDayModal('${todayStr}')">Ändra</button>
+      </div>`;
+    return;
+  }
   const r=findPass(first.passId);
   if(!r){el.innerHTML=`<div class="hero-label">${dateLabel}</div><div class="hero-title">Planerat pass saknas</div><div class="hero-sub">Passet är borttaget — välj nytt</div>`;return;}
   const tags=(r.pass.formTags||[]).slice(0,2).map(tid=>{
@@ -1812,6 +2050,9 @@ function renderGoals(){
 }
 
 /* ========== CALENDAR / SCHEDULE ========== */
+const FORM_CAT_COLOR={strength:'#e8440a',cardio:'#00c896',bodyweight:'#f5a800',mobility:'#00a8d6'};
+const FORM_CAT_LABEL={strength:'Styrka',cardio:'Kondition',bodyweight:'Egen vikt',mobility:'Rörlighet'};
+
 function renderCalendar(){
   const grid=document.getElementById('cal-grid');
   const label=document.getElementById('cal-month-label');
@@ -1827,40 +2068,189 @@ function renderCalendar(){
     const iso=isoDate(new Date(currentMonth.getFullYear(),currentMonth.getMonth(),d));
     const isToday=iso===todayStr;
     const planned=plannedForDate(iso);
-    const completed=workoutHistory.some(w=>w.date&&w.date.startsWith(iso));
+    const completed=workoutHistory.filter(w=>w.date&&w.date.startsWith(iso));
     const hasPlan=planned.length>0;
+    const isDone=completed.length>0;
     let cls='cal-day';
     if(isToday) cls+=' today';
-    else if(hasPlan||completed) cls+=' has-w';
-    h+=`<div class="${cls}" onclick="openDayModal('${iso}')">${d}${completed?'<div class="cal-done-mark"></div>':''}</div>`;
+    else if(hasPlan||isDone) cls+=' has-w';
+    // Bygg prickar: en per planerat pass (max 3), med träningsformens färg
+    let dots='';
+    if(hasPlan){
+      const shown=planned.slice(0,3);
+      shown.forEach(p=>{
+        let color;
+        if(p.isRest){
+          color=isToday?'rgba(255,255,255,0.6)':'#a5a29a';
+        }else{
+          const r=findPass(p.passId);
+          const cat=r?r.form.cat:'strength';
+          color=isToday?'#fff':(FORM_CAT_COLOR[cat]||'#e8440a');
+        }
+        dots+=`<span class="cal-dot" style="background:${color}"></span>`;
+      });
+      if(planned.length>3) dots+=`<span class="cal-dots-more">+${planned.length-3}</span>`;
+      dots=`<div class="cal-dots">${dots}</div>`;
+    }
+    // Tooltip: passnamn + status
+    const tipParts=[];
+    planned.forEach(p=>{
+      if(p.isRest){tipParts.push('Vilodag (planerat)');return;}
+      const r=findPass(p.passId);
+      tipParts.push((r?r.pass.name:'Planerat')+' (planerat)');
+    });
+    completed.forEach(w=>tipParts.push((w.passName||'Pass')+' (slutfört)'));
+    const tip=tipParts.length?` title="${tipParts.join(' · ').replace(/"/g,'&quot;')}"`:'';
+    h+=`<div class="${cls}"${tip} onclick="openDayModal('${iso}')">${d}${dots}${isDone?'<div class="cal-done-mark" title="Pass slutfört"></div>':''}</div>`;
   }
   grid.innerHTML=h;
 }
 function changeMonth(d){currentMonth=new Date(currentMonth.getFullYear(),currentMonth.getMonth()+d,1);renderCalendar();}
 
+let dayIsPast=false;
+
 function openDayModal(iso){
   dayModalDate=iso;
+  dayIsPast=iso<todayIso();
   document.getElementById('day-title').textContent=formatDateLong(iso);
   document.getElementById('day-search').value='';
+  // Lås UI för planeringsdelar om historiskt datum
+  const restBtn=document.querySelector('#m-day button[onclick="addRestDayAndRefresh()"]');
+  const restWrap=restBtn?restBtn.parentElement:null;
+  const searchEl=document.getElementById('day-search');
+  const passListEl=document.getElementById('day-pass-list');
+  if(dayIsPast){
+    if(restWrap) restWrap.style.display='none';
+    if(searchEl) searchEl.style.display='none';
+    if(passListEl) passListEl.innerHTML='<div style="background:var(--surface-2);border-radius:var(--r);padding:11px 13px;font-size:12px;color:var(--text-2);line-height:1.5">⚠ Historiskt datum — du kan se loggade pass men inte ändra planering.</div>';
+  }else{
+    if(restWrap) restWrap.style.display='flex';
+    if(searchEl) searchEl.style.display='block';
+  }
+  renderDayCompletedList();
   renderDayPlannedList();
-  renderDayPassList();
+  if(!dayIsPast) renderDayPassList();
   openModal('m-day');
+}
+
+function renderDayCompletedList(){
+  const list=document.getElementById('day-completed-list');
+  if(!list) return;
+  const completed=workoutHistory.filter(w=>w.date&&w.date.startsWith(dayModalDate));
+  if(!completed.length){list.innerHTML='';return;}
+  list.innerHTML='<div class="section-title" style="padding:0 2px 6px;font-size:13px;color:var(--accent-3)">Slutförda pass</div>'+completed.map(w=>{
+    const cat=w.formCat||'strength';
+    const tagClass=cat==='cardio'?'tag-cardio':cat==='mobility'?'tag-mobility':cat==='bodyweight'?'tag-bodyweight':'tag-strength';
+    const exCount=(w.exercises||[]).length;
+    const feel=w.feel?'😩😐🙂💪🔥'[w.feel-1]:'';
+    return `
+    <div class="sched-row" style="cursor:pointer;border-color:var(--accent-3)" onclick="showWorkoutDetail('${w.id}')">
+      <div class="sched-dot done"><i class="ti ti-check" style="font-size:13px"></i></div>
+      <div class="sched-info"><div class="sched-day" style="color:var(--accent-3)">SLUTFÖRT ${feel}</div><div class="sched-name">${w.passName||'Pass'} · ${exCount} övn</div></div>
+      <i class="ti ti-chevron-right" style="color:var(--text-3);font-size:18px"></i>
+    </div>`;
+  }).join('');
 }
 
 function renderDayPlannedList(){
   const list=document.getElementById('day-planned-list');
   const planned=plannedForDate(dayModalDate);
-  if(!planned.length){list.innerHTML='<div style="font-size:12px;color:var(--text-3);padding:6px 2px">Inget planerat denna dag.</div>';return;}
+  if(!planned.length){list.innerHTML=dayIsPast?'':'<div style="font-size:12px;color:var(--text-3);padding:6px 2px">Inget planerat denna dag.</div>';return;}
+  const removeBtnHtml=p=>dayIsPast?'':`<button onclick="removePlanAndRefresh('${p.id}')" class="remove-btn" title="Ta bort"><i class="ti ti-trash"></i></button>`;
   list.innerHTML=planned.map(p=>{
+    if(p.isRest){
+      return `
+      <div class="sched-row" style="cursor:default">
+        <div class="sched-dot" style="background:var(--surface-3);color:var(--text-2)"><i class="ti ti-zzz" style="font-size:13px"></i></div>
+        <div class="sched-info"><div class="sched-day">PLANERAT</div><div class="sched-name">Vilodag 😴</div></div>
+        ${removeBtnHtml(p)}
+      </div>`;
+    }
     const r=findPass(p.passId);
     if(!r) return '';
     return `
     <div class="sched-row today" style="cursor:default">
       <div class="sched-dot today-dot" style="animation:none"><i class="ti ti-calendar-event" style="font-size:13px"></i></div>
       <div class="sched-info"><div class="sched-day">PLANERAT</div><div class="sched-name">${r.pass.name}</div></div>
-      <button onclick="removePlanAndRefresh('${p.id}')" class="btn-sm" style="background:var(--surface-2);color:#e8200a"><i class="ti ti-trash"></i></button>
+      ${removeBtnHtml(p)}
     </div>`;
   }).join('');
+}
+
+function addRestDayAndRefresh(){
+  if(!dayModalDate) return;
+  addRestDay(dayModalDate);
+  renderDayPlannedList();
+  renderCalendar();
+  renderWeekSchedule();
+  renderHomeHero();
+}
+
+let currentWorkoutDetailId=null;
+
+function showWorkoutDetail(workoutId){
+  const w=workoutHistory.find(x=>x.id===workoutId);
+  if(!w) return;
+  currentWorkoutDetailId=workoutId;
+  // Stäng dag-modalen om öppen så detaljen blir överst
+  closeModal('m-day');
+  document.getElementById('wd-title').textContent=w.passName||'Pass';
+  // Meta-info
+  const date=new Date(w.date);
+  const dateStr=`${SWE_DAYS_FULL[date.getDay()]} ${date.getDate()} ${SWE_MONTHS[date.getMonth()]}`;
+  const dur=w.duration||0;
+  const durStr=dur>0?`${Math.floor(dur/60)} min ${String(dur%60).padStart(2,'0')} sek`:'–';
+  const feelEmoji=w.feel?['😩','😐','🙂','💪','🔥'][w.feel-1]:'';
+  const feelLabel=w.feel?['Tungt','Okej','Bra','Stark','Episkt'][w.feel-1]:'Ej satt';
+  document.getElementById('wd-meta').innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div style="font-weight:700">${dateStr}</div>
+      <div style="font-size:11px;color:var(--text-2)">${w.formName||''}</div>
+    </div>
+    <div style="display:flex;gap:14px;font-size:12px;color:var(--text-2)">
+      <div><i class="ti ti-clock" style="font-size:14px;vertical-align:-2px"></i> ${durStr}</div>
+      <div><span style="font-size:14px">${feelEmoji}</span> ${feelLabel}</div>
+      <div><i class="ti ti-barbell" style="font-size:14px;vertical-align:-2px"></i> ${(w.exercises||[]).length} övn</div>
+    </div>`;
+  // Övningar med set
+  const exList=document.getElementById('wd-exercises');
+  if(!w.exercises||!w.exercises.length){
+    exList.innerHTML='<div style="text-align:center;color:var(--text-3);font-size:13px;padding:14px">Inga övningar registrerade</div>';
+  }else{
+    exList.innerHTML=w.exercises.map((ex,i)=>{
+      const sets=(ex.sets||[]).filter(s=>s.done||s.w||s.r);
+      const setsHtml=sets.length?sets.map((s,si)=>{
+        const isCardio=ex.cat==='cardio';
+        const wLabel=isCardio?'Dist':'Vikt';
+        const rLabel=isCardio?'Tid':'Reps';
+        return `<div style="display:grid;grid-template-columns:24px 1fr 1fr 24px;gap:6px;font-size:12px;padding:4px 0;align-items:center"><div style="color:var(--text-3);font-weight:700;text-align:center">${si+1}</div><div style="text-align:center"><span style="font-weight:700">${s.w||'–'}</span> <span style="color:var(--text-3);font-size:10px">${wLabel.toLowerCase()}</span></div><div style="text-align:center"><span style="font-weight:700">${s.r||'–'}</span> <span style="color:var(--text-3);font-size:10px">${rLabel.toLowerCase()}</span></div><div style="text-align:center;color:${s.done?'var(--accent-3)':'var(--text-3)'}">${s.done?'<i class="ti ti-check"></i>':'–'}</div></div>`;
+      }).join(''):'<div style="font-size:12px;color:var(--text-3);padding:6px 0">Inga set registrerade</div>';
+      return `
+      <div class="ex-block">
+        <div class="ex-block-head">
+          <div class="ex-block-num">${i+1}</div>
+          <div class="ex-block-name">${ex.name}</div>
+        </div>
+        <div style="padding:6px 13px">${setsHtml}</div>
+      </div>`;
+    }).join('');
+  }
+  // Anteckning
+  document.getElementById('wd-note').textContent=w.note?`"${w.note}"`:'';
+  openModal('m-workout-detail');
+}
+
+function deleteWorkoutLog(){
+  if(!currentWorkoutDetailId) return;
+  if(!confirm('Ta bort denna pass-logg permanent?')) return;
+  workoutHistory=workoutHistory.filter(w=>w.id!==currentWorkoutDetailId);
+  currentWorkoutDetailId=null;
+  saveState();
+  closeModal('m-workout-detail');
+  // Refresha dag-modalen om öppen
+  if(dayModalDate){renderDayCompletedList();}
+  renderCalendar();
+  renderHomeHero();
 }
 
 function renderDayPassList(){
@@ -1893,6 +2283,124 @@ function removePlanAndRefresh(planId){
   renderHomeHero();
 }
 
+/* ========== MIN TRÄNINGSLOGG (page-history) ========== */
+let currentHistoryWeek=(function(){
+  const today=new Date();
+  const dow=today.getDay()||7;
+  return new Date(today.getFullYear(),today.getMonth(),today.getDate()-dow+1);
+})();
+
+function changeHistoryWeek(dir){
+  currentHistoryWeek=new Date(currentHistoryWeek.getFullYear(),currentHistoryWeek.getMonth(),currentHistoryWeek.getDate()+dir*7);
+  renderHistory();
+}
+
+function getWeekNumber(d){
+  const date=new Date(d.getTime());
+  date.setHours(0,0,0,0);
+  date.setDate(date.getDate()+3-(date.getDay()+6)%7);
+  const week1=new Date(date.getFullYear(),0,4);
+  return 1+Math.round(((date-week1)/86400000-3+(week1.getDay()+6)%7)/7);
+}
+
+function calcWeekStats(monday){
+  const sunday=new Date(monday.getFullYear(),monday.getMonth(),monday.getDate()+7);
+  const inWeek=workoutHistory.filter(w=>{
+    if(!w.date) return false;
+    const d=new Date(w.date);
+    return d>=monday&&d<sunday;
+  });
+  let totalKg=0,totalKm=0,totalSec=0,feelSum=0,feelCnt=0;
+  inWeek.forEach(w=>{
+    totalSec+=w.duration||0;
+    if(w.feel){feelSum+=w.feel;feelCnt++;}
+    (w.exercises||[]).forEach(ex=>{
+      const isCardio=ex.cat==='cardio';
+      (ex.sets||[]).forEach(s=>{
+        if(!s.done) return;
+        if(isCardio){totalKm+=(s.w||0);} // w-fältet är distans för cardio
+        else{totalKg+=(s.w||0)*(s.r||0);}
+      });
+    });
+  });
+  return {
+    workouts:inWeek,count:inWeek.length,totalKg,totalKm,totalSec,
+    avgFeel:feelCnt?feelSum/feelCnt:null,
+    monday,sunday
+  };
+}
+
+function classifyWeekVolume(weekStats){
+  // Räkna ut snitt från de senaste 8 veckorna (exklusive denna)
+  const samples=[];
+  for(let i=1;i<=8;i++){
+    const prevMon=new Date(weekStats.monday.getFullYear(),weekStats.monday.getMonth(),weekStats.monday.getDate()-i*7);
+    const s=calcWeekStats(prevMon);
+    if(s.count>0) samples.push(s.totalKg+s.totalKm*100); // jämför viktad summa
+  }
+  const thisScore=weekStats.totalKg+weekStats.totalKm*100;
+  if(samples.length<2){
+    // För få data — fallback baserat på absoluta värden
+    if(weekStats.count===0) return {label:'Ingen träning',color:'#a5a29a'};
+    if(weekStats.count<=2) return {label:'Lätt',color:'#5b52f0'};
+    if(weekStats.count<=4) return {label:'Medel',color:'#f5a800'};
+    return {label:'Tung',color:'#e8200a'};
+  }
+  const avg=samples.reduce((a,b)=>a+b,0)/samples.length;
+  if(thisScore<avg*0.7) return {label:'Lätt',color:'#5b52f0'};
+  if(thisScore<avg*1.3) return {label:'Medel',color:'#f5a800'};
+  return {label:'Tung',color:'#e8200a'};
+}
+
+function renderHistory(){
+  const monday=currentHistoryWeek;
+  const sunday=new Date(monday.getFullYear(),monday.getMonth(),monday.getDate()+6);
+  const wk=getWeekNumber(monday);
+  document.getElementById('hist-week-label').textContent=`Vecka ${wk} · ${monday.getFullYear()}`;
+  document.getElementById('hist-week-range').textContent=`${monday.getDate()}/${monday.getMonth()+1} – ${sunday.getDate()}/${sunday.getMonth()+1}`;
+  // Inaktivera framåt-knapp om vi är på nuvarande/framtida vecka
+  const today=new Date();
+  const todayDow=today.getDay()||7;
+  const thisMon=new Date(today.getFullYear(),today.getMonth(),today.getDate()-todayDow+1);
+  const nextBtn=document.getElementById('hist-next-btn');
+  if(nextBtn) nextBtn.disabled=monday>=thisMon;
+  // Stats
+  const stats=calcWeekStats(monday);
+  const cls=classifyWeekVolume(stats);
+  const volTag=document.getElementById('hist-vol-tag');
+  volTag.textContent=cls.label;
+  volTag.style.color='#fff';
+  const heroBg=document.querySelector('#hist-summary > div:first-child');
+  if(heroBg){
+    heroBg.style.background=cls.label==='Ingen träning'?'linear-gradient(135deg,#68655c,#a5a29a)':`linear-gradient(135deg,${cls.color},${cls.color}cc)`;
+  }
+  document.getElementById('hist-vol-desc').textContent=stats.count===0?'inga pass denna vecka':'träningsvecka';
+  document.getElementById('hist-count').textContent=stats.count;
+  const min=Math.floor(stats.totalSec/60);
+  document.getElementById('hist-time').textContent=min<60?`${min} min`:`${Math.floor(min/60)} h ${min%60} min`;
+  document.getElementById('hist-dist').textContent=stats.totalKm>0?stats.totalKm.toFixed(1).replace('.',',')+' km':'0 km';
+  document.getElementById('hist-feel').textContent=stats.avgFeel?stats.avgFeel.toFixed(1).replace('.',',')+' '+['😩','😐','🙂','💪','🔥'][Math.round(stats.avgFeel)-1]:'–';
+  document.getElementById('hist-vol-detail').textContent=`Volym styrka: ${Math.round(stats.totalKg).toLocaleString('sv-SE')} kg · Volym kondition: ${stats.totalKm.toFixed(1).replace('.',',')} km`;
+  // Passlista
+  const list=document.getElementById('hist-workout-list');
+  if(!stats.workouts.length){
+    list.innerHTML='<div style="text-align:center;color:var(--text-3);font-size:13px;padding:24px">Inga genomförda pass denna vecka.</div>';
+    return;
+  }
+  list.innerHTML=stats.workouts.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(w=>{
+    const d=new Date(w.date);
+    const dayLabel=`${SWE_DAYS_SHORT[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}`;
+    const feel=w.feel?['😩','😐','🙂','💪','🔥'][w.feel-1]:'';
+    const cat=w.formCat||'strength';
+    return `
+    <div class="sched-row" style="cursor:pointer" onclick="showWorkoutDetail('${w.id}')">
+      <div class="sched-dot done"><i class="ti ti-check" style="font-size:13px"></i></div>
+      <div class="sched-info"><div class="sched-day">${dayLabel} ${feel}</div><div class="sched-name">${w.passName||'Pass'} · ${(w.exercises||[]).length} övn</div></div>
+      <i class="ti ti-chevron-right" style="color:var(--text-3);font-size:18px"></i>
+    </div>`;
+  }).join('');
+}
+
 function renderWeekSchedule(){
   const el=document.getElementById('week-schedule');
   if(!el) return;
@@ -1917,6 +2425,14 @@ function renderWeekSchedule(){
       </div>`);
     }else{
       planned.forEach(p=>{
+        if(p.isRest){
+          rows.push(`
+          <div class="sched-row ${isToday?'today':''}" onclick="openDayModal('${iso}')" style="cursor:pointer">
+            <div class="sched-dot" style="background:var(--surface-3);color:var(--text-2)"><i class="ti ti-zzz" style="font-size:13px"></i></div>
+            <div class="sched-info"><div class="sched-day">${label}</div><div class="sched-name">Vilodag 😴</div></div>
+          </div>`);
+          return;
+        }
         const r=findPass(p.passId);
         const passName=r?r.pass.name:'Borttaget pass';
         const formCat=r?r.form.cat:'strength';
