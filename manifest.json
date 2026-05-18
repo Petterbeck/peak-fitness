@@ -2,7 +2,7 @@
   "name": "Peak Fitness",
   "short_name": "Peak Fitness",
   "description": "Din personliga träningsapp",
-  "start_url": "./alpinfys.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
