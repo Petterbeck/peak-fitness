@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon.svg">
 <link rel="icon" type="image/svg+xml" href="icon.svg">
-<link href="https://cdn.jsdelivr.net/npm/@tabler/[email protected]/dist/tabler-icons.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
 <style>
@@ -171,6 +171,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .set-input{background:var(--surface-2);border:1.5px solid transparent;border-radius:7px;padding:7px 8px;font-size:14px;font-weight:700;color:var(--text-1);text-align:center;width:100%;outline:none;font-family:inherit;transition:border-color 0.14s}
 .set-input:focus{border-color:var(--accent)}
 .set-input.done{background:rgba(0,200,150,0.1);color:var(--accent-3)}
+.set-stepper{display:flex;align-items:center;background:var(--surface-2);border-radius:7px;overflow:hidden;border:1.5px solid transparent;transition:border-color 0.14s}
+.set-stepper:focus-within{border-color:var(--accent)}
+.set-stepper.done{background:rgba(0,200,150,0.1)}
+.set-stepper input{flex:1;min-width:0;border:none;background:none;text-align:center;font-size:14px;font-weight:700;color:var(--text-1);padding:7px 2px;outline:none;font-family:inherit;-moz-appearance:textfield;width:100%}
+.set-stepper input::-webkit-outer-spin-button,.set-stepper input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.set-stepper.done input{color:var(--accent-3)}
+.stepper-btn{width:24px;height:34px;background:none;border:none;color:var(--text-2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;font-weight:800;font-family:inherit;line-height:1;user-select:none}
+.stepper-btn:hover{background:var(--surface-3);color:var(--text-1)}
+.stepper-btn:active{background:var(--accent);color:#fff}
 .set-check{background:var(--surface-2);border:none;width:30px;height:30px;border-radius:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:15px}
 .set-check.done{background:var(--accent-3);color:#fff}
 .add-set-btn{background:none;border:none;width:100%;padding:9px;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;border-top:0.5px solid var(--border)}
@@ -302,8 +311,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div class="topbar">
   <div class="brand"><span class="brand-mark">🏔️</span><span class="brand-name">Peak Fitness</span></div>
   <div class="top-right">
-    <div class="streak"><i class="ti ti-flame" style="font-size:12px"></i> 7</div>
-    <button class="icon-btn" onclick="toggleTheme()" id="theme-btn"><i class="ti ti-moon"></i></button>
+    <div class="streak" title="Tränat 7 dagar i rad (streak)"><i class="ti ti-flame" style="font-size:12px"></i> 7</div>
     <button class="icon-btn avatar-btn" onclick="navigate('page-profile')" id="profile-btn" title="Profil">E</button>
   </div>
 </div>
@@ -386,12 +394,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       </div>
       <input class="search-bar" id="ex-search" placeholder="Sök övning..." oninput="renderExercises()">
       <div>
-        <div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;padding:0 2px 4px">Muskel / område</div>
-        <div class="chip-row" id="ex-muscle-chips"></div>
+        <div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;padding:0 2px 4px">Träningsform</div>
+        <div class="chip-row" id="ex-form-chips"></div>
       </div>
       <div>
-        <div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;padding:0 2px 4px">Träningsform / typ</div>
-        <div class="chip-row" id="ex-form-chips"></div>
+        <div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;padding:0 2px 4px">Muskel / område</div>
+        <div class="chip-row" id="ex-muscle-chips"></div>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding:2px;font-size:11px;color:var(--text-2)">
         <span id="ex-count">0 övningar</span>
@@ -575,6 +583,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div id="goals-list" style="display:flex;flex-direction:column;gap:7px"></div>
   <button class="btn-ghost">+ Nytt mål</button>
   <div class="section-head" style="margin-top:4px"><div class="section-title">Tema</div></div>
+  <button onclick="toggleTheme()" id="theme-btn" class="card" style="display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;width:100%;border:0.5px solid var(--border);background:var(--surface);color:var(--text-1);font-family:inherit;text-align:left">
+    <i class="ti ti-moon" id="theme-icon" style="font-size:20px;color:var(--accent-4)"></i>
+    <div style="flex:1">
+      <div style="font-size:14px;font-weight:700" id="theme-label">Mörkt läge</div>
+      <div style="font-size:11px;color:var(--text-2)" id="theme-sub">Klicka för att växla</div>
+    </div>
+    <i class="ti ti-chevron-right" style="color:var(--text-3);font-size:18px"></i>
+  </button>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
     <div style="background:var(--surface);border:1.5px solid var(--text-1);border-radius:var(--r);padding:10px;cursor:pointer;display:flex;align-items:center;gap:7px" onclick="setTheme('#e8440a','#e8200a','#f5a800','#00c896','#5b52f0',this)">
       <span style="display:flex"><span style="width:15px;height:15px;border-radius:50%;background:#e8440a"></span><span style="width:15px;height:15px;border-radius:50%;background:#e8200a;margin-left:-4px"></span></span><span style="font-size:12px;font-weight:600">Summit</span>
@@ -713,19 +729,95 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="modal-sheet"><div class="modal-handle"></div>
     <div class="modal-title" id="ex-modal-title">Ny övning</div>
     <div style="display:flex;flex-direction:column;gap:12px">
+
       <div><label class="field-label">Namn</label><input class="field-input" id="ex-f-name" placeholder="T.ex. Rumänsk marklyft"></div>
-      <div><label class="field-label">Muskel / område</label>
-        <select class="field-select" id="ex-f-muscle"></select>
+
+      <div>
+        <label class="field-label">Träningsform <span style="color:var(--accent);font-weight:800">*</span></label>
+        <div class="chip-row" id="ex-f-primary" style="gap:5px"></div>
       </div>
-      <div><label class="field-label">Träningsform / typ (flera möjliga)</label>
-        <div class="chip-row" id="ex-f-form-tags" style="flex-wrap:wrap;gap:5px"></div>
+
+      <label style="display:flex;align-items:center;gap:10px;background:var(--surface-2);border-radius:var(--r-sm);padding:11px 13px;cursor:pointer">
+        <input type="checkbox" id="ex-f-fav" style="width:18px;height:18px;accent-color:#f5a800;cursor:pointer">
+        <span style="font-size:18px">⭐</span>
+        <span style="font-size:14px;font-weight:600;flex:1">Markera som favorit</span>
+        <span style="font-size:11px;color:var(--text-3)">(visas överst)</span>
+      </label>
+
+      <!-- STYRKA-fält -->
+      <div id="ex-fields-strength" style="display:none;flex-direction:column;gap:12px">
+        <div><label class="field-label">Muskelgrupp</label>
+          <select class="field-select" id="ex-f-muscle"></select>
+        </div>
+        <div>
+          <label class="field-label">Sub-typ (välj flera)</label>
+          <div class="chip-row" id="ex-f-strength-tags" style="gap:5px"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <div><label class="field-label">Sets</label><input class="field-input" id="ex-f-sets" type="number" value="3" min="1"></div>
+          <div><label class="field-label">Reps</label><input class="field-input" id="ex-f-reps" type="number" value="10" min="0"></div>
+          <div><label class="field-label">Vikt kg</label><input class="field-input" id="ex-f-weight" type="number" placeholder="–" min="0" step="2.5"></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:10px;background:var(--surface-2);border-radius:var(--r-sm);padding:9px 12px;cursor:pointer">
+          <input type="checkbox" id="ex-f-bodyweight" onchange="toggleBodyweightField()" style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer">
+          <span style="font-size:13px;font-weight:600;flex:1">Egen vikt (chins, dips, armhävningar…)</span>
+          <span style="font-size:11px;color:var(--text-3)">Använder din vikt</span>
+        </label>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div><label class="field-label">Default sets</label><input class="field-input" id="ex-f-sets" type="number" value="3" min="1"></div>
-        <div><label class="field-label">Default reps</label><input class="field-input" id="ex-f-reps" type="number" value="10" min="0"></div>
+
+      <!-- EGEN VIKT-fält -->
+      <div id="ex-fields-bodyweight" style="display:none;flex-direction:column;gap:12px">
+        <div><label class="field-label">Muskelgrupp</label>
+          <select class="field-select" id="ex-f-bw-muscle"></select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><label class="field-label">Default sets</label><input class="field-input" id="ex-f-bw-sets" type="number" value="3" min="1"></div>
+          <div><label class="field-label">Default reps</label><input class="field-input" id="ex-f-bw-reps" type="number" value="10" min="0"></div>
+        </div>
       </div>
+
+      <!-- LÖPNING / CYKLING-fält -->
+      <div id="ex-fields-cardio" style="display:none;flex-direction:column;gap:12px">
+        <div>
+          <label class="field-label">Målpulszon</label>
+          <select class="field-select" id="ex-f-pulse">
+            <option value="">Ingen specifik</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Typ (välj flera)</label>
+          <div class="chip-row" id="ex-f-cardio-tags" style="gap:5px"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <div><label class="field-label">Antal varv</label><input class="field-input" id="ex-f-c-sets" type="number" value="1" min="1"></div>
+          <div><label class="field-label">Distans km</label><input class="field-input" id="ex-f-c-dist" type="number" placeholder="–" min="0" step="0.1"></div>
+          <div><label class="field-label">Tid min</label><input class="field-input" id="ex-f-c-time" type="number" placeholder="–" min="0" step="0.5"></div>
+        </div>
+        <div class="notice" style="font-size:12px">📡 I etapp 5: importera data automatiskt från Garmin/Strava.</div>
+      </div>
+
+      <!-- RÖRLIGHET-fält -->
+      <div id="ex-fields-mobility" style="display:none;flex-direction:column;gap:12px">
+        <div><label class="field-label">Område</label>
+          <select class="field-select" id="ex-f-m-area"></select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><label class="field-label">Default sets</label><input class="field-input" id="ex-f-m-sets" type="number" value="3" min="1"></div>
+          <div><label class="field-label">Reps eller tid (sek)</label><input class="field-input" id="ex-f-m-reps" type="number" value="10" min="0"></div>
+        </div>
+      </div>
+
+      <!-- ÖVRIGT-fält -->
+      <div id="ex-fields-other" style="display:none;flex-direction:column;gap:12px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><label class="field-label">Default sets</label><input class="field-input" id="ex-f-o-sets" type="number" value="1" min="1"></div>
+          <div><label class="field-label">Default reps</label><input class="field-input" id="ex-f-o-reps" type="number" value="1" min="0"></div>
+        </div>
+      </div>
+
       <div><label class="field-label">Egna taggar (komma-separerat)</label><input class="field-input" id="ex-f-custom" placeholder="t.ex. favorit, knaeproblem"></div>
       <div><label class="field-label">Anteckning / utförande</label><input class="field-input" id="ex-f-note" placeholder="Kort beskrivning av övningen"></div>
+
       <div style="display:flex;gap:8px">
         <button class="btn-primary" onclick="saveExerciseEdit()" style="flex:1"><i class="ti ti-check"></i> Spara</button>
         <button class="btn-ghost" onclick="deleteExercise()" id="ex-delete-btn" style="flex:0 0 auto;color:#e8200a;border-color:#e8200a;background:transparent;font-weight:700"><i class="ti ti-trash"></i> Ta bort</button>
@@ -1011,6 +1103,8 @@ async function loadFromCloud(silent){
       defaultSets:ex.default_sets,defaultReps:ex.default_reps,
       mediaUrl:ex.media_url,fav:ex.fav,note:ex.note||''
     }));
+    // Migrera så cloud-data också får primärform (fält som inte syncas än)
+    migrateExercisesToPrimaryForm();
     plannedWorkouts=(pwRes.data||[]).map(pw=>({
       id:pw.id,passId:pw.pass_id,date:pw.date,notes:pw.notes||''
     }));
@@ -1094,6 +1188,55 @@ const FORM_TAGS=[
   {id:'yoga',label:'Yoga',color:'#00a8d6'}
 ];
 const FORM_TAG_BY_ID=Object.fromEntries(FORM_TAGS.map(t=>[t.id,t]));
+
+/* PRIMÄRA TRÄNINGSFORMER — styr vilka fält som visas på övningen */
+const PRIMARY_FORMS=[
+  {id:'strength',label:'Styrketräning',icon:'🏋️',color:'#5b52f0'},
+  {id:'bodyweight',label:'Egen vikt',icon:'🤸',color:'#f5a800'},
+  {id:'running',label:'Löpning',icon:'🏃',color:'#00c896'},
+  {id:'cycling',label:'Cykling',icon:'🚴',color:'#00a8d6'},
+  {id:'mobility',label:'Rörlighet / Yoga',icon:'🧘',color:'#a78bfa'},
+  {id:'group',label:'Gruppass',icon:'👥',color:'#ec4899'},
+  {id:'other',label:'Övrigt',icon:'💪',color:'#68655c'}
+];
+
+// Helper: alltid returnera en effektiv primärform, även för gamla övningar utan fält
+function getPrimaryForm(ex){
+  if(ex&&ex.primaryForm) return ex.primaryForm;
+  const tags=(ex&&ex.formTags)||[];
+  if(tags.includes('kondition')) return 'running';
+  if(tags.includes('egenvikt')&&!tags.includes('gym')) return 'bodyweight';
+  if(tags.includes('rorlighet')||tags.includes('yoga')) return 'mobility';
+  return 'strength';
+}
+const PRIMARY_FORM_BY_ID=Object.fromEntries(PRIMARY_FORMS.map(f=>[f.id,f]));
+const CARDIO_FORMS=['running','cycling'];
+
+const PULSE_ZONES=[
+  {id:1,label:'Z1',desc:'Återhämtning · 50-60% av maxpuls'},
+  {id:2,label:'Z2',desc:'Aerob bas · 60-70%'},
+  {id:3,label:'Z3',desc:'Tempo · 70-80%'},
+  {id:4,label:'Z4',desc:'Tröskel · 80-90%'},
+  {id:5,label:'Z5',desc:'Max · 90-100%'}
+];
+
+const RUN_SUBTAGS=['Intervall','Tempo','Återhämtning','Långpass','Backe','Bana','Terräng','Uppvärmning','Nedvarvning'];
+const BIKE_SUBTAGS=['Intervall','Tempo','Återhämtning','Långpass','Backe','Inomhus','Uppvärmning','Nedvarvning'];
+
+function migrateExercisesToPrimaryForm(){
+  let changed=false;
+  exercises.forEach(ex=>{
+    if(ex.primaryForm) return;
+    const tags=ex.formTags||[];
+    if(tags.includes('kondition')) ex.primaryForm='running';
+    else if(tags.includes('egenvikt')&&!tags.includes('gym')) ex.primaryForm='bodyweight';
+    else if(tags.includes('rorlighet')||tags.includes('yoga')) ex.primaryForm='mobility';
+    else if(tags.includes('gym')||tags.includes('styrka')||tags.includes('dynamisk')||tags.includes('explosivitet')) ex.primaryForm='strength';
+    else ex.primaryForm='strength';
+    changed=true;
+  });
+  if(changed) saveState();
+}
 
 let exercises=[];
 
@@ -1190,6 +1333,8 @@ const wDays=[5,8,10,12,14,17,19,22,24];
 let workoutHistory=[];
 let plannedWorkouts=[]; // {id, date:'YYYY-MM-DD', passId, formId, notes}
 let dayModalDate=null;
+// Atletens profil (för "egen vikt"-övningar etc) — koppling till editerbar profil kommer senare
+let userProfile={name:'Erik',weightKg:82,heightCm:183,age:42};
 
 /* ========== STORAGE ========== */
 const STORAGE_KEY='alpinfys_v2';
@@ -1226,8 +1371,7 @@ function loadState(){
     if(s.theme){
       currentTheme=s.theme;
       document.getElementById('app').setAttribute('data-theme',currentTheme);
-      const tb=document.getElementById('theme-btn');
-      if(tb) tb.innerHTML=currentTheme==='dark'?'<i class="ti ti-sun"></i>':'<i class="ti ti-moon"></i>';
+      updateThemeUI();
     }
   }catch(e){console.warn('Load failed:',e);}
 }
@@ -1266,9 +1410,17 @@ function navigate(id){
 function toggleTheme(){
   currentTheme=currentTheme==='light'?'dark':'light';
   document.getElementById('app').setAttribute('data-theme',currentTheme);
-  document.getElementById('theme-btn').innerHTML=currentTheme==='dark'?'<i class="ti ti-sun"></i>':'<i class="ti ti-moon"></i>';
+  updateThemeUI();
   setTimeout(drawCharts,50);
   saveState();
+}
+function updateThemeUI(){
+  const ic=document.getElementById('theme-icon');
+  const lb=document.getElementById('theme-label');
+  const sb=document.getElementById('theme-sub');
+  if(ic) ic.className='ti '+(currentTheme==='dark'?'ti-sun':'ti-moon');
+  if(lb) lb.textContent=currentTheme==='dark'?'Ljust läge':'Mörkt läge';
+  if(sb) sb.textContent=currentTheme==='dark'?'Just nu: Mörkt':'Just nu: Ljust';
 }
 
 function setTheme(a,a2,a3,a4,a5,el){
@@ -1530,9 +1682,7 @@ function renderDetailExs(pass){
       <div class="ex-row" onclick="openExerciseDetail('${ex.id}')" style="cursor:pointer">
         <div class="ex-row-thumb" style="background:${catGrad[grad]||catGrad.strength}"><i class="ti ti-barbell"></i></div>
         <div class="ex-row-info"><div class="ex-row-name">${ex.name}</div><div class="ex-row-meta">${repStr}</div></div>
-        <button class="fav-btn ${ex.fav?'on':''}" onclick="event.stopPropagation();toggleExerciseFav('${ex.id}')" title="${ex.fav?'Ta bort favorit':'Markera som favorit'}">
-          <i class="ti ${ex.fav?'ti-star-filled':'ti-star'}"></i>
-        </button>
+        ${ex.fav?'<span style="font-size:18px;line-height:1;flex-shrink:0" title="Favorit">⭐</span>':''}
         <button class="remove-btn" onclick="event.stopPropagation();removeRefFromPass('${pass.id}',${refIdx})" title="Ta bort från passet"><i class="ti ti-trash"></i></button>
       </div>`;
     });
@@ -1687,7 +1837,7 @@ function renderExFormChips(){
   const c=document.getElementById('ex-form-chips');
   if(!c) return;
   c.innerHTML=`<button class="filter-chip ${!exFilter.form?'active':''}" onclick="setExForm('')">Alla</button>`+
-    FORM_TAGS.map(t=>`<button class="filter-chip ${exFilter.form===t.id?'active':''}" onclick="setExForm('${t.id}')">${t.label}</button>`).join('');
+    PRIMARY_FORMS.map(f=>`<button class="filter-chip ${exFilter.form===f.id?'active':''}" onclick="setExForm('${f.id}')">${f.icon} ${f.label}</button>`).join('');
 }
 function setExMuscle(m){exFilter.muscle=m;renderExercises();}
 function setExForm(f){exFilter.form=f;renderExercises();}
@@ -1706,9 +1856,9 @@ function renderExercises(){
   exFilter.q=q;
   const fil=exercises.filter(ex=>{
     if(exFilter.muscle&&ex.muscle!==exFilter.muscle) return false;
-    if(exFilter.form&&!(ex.formTags||[]).includes(exFilter.form)) return false;
+    if(exFilter.form&&getPrimaryForm(ex)!==exFilter.form) return false;
     if(q){
-      const hay=(ex.name+' '+ex.muscle+' '+(ex.formTags||[]).join(' ')+' '+(ex.customTags||[]).join(' ')).toLowerCase();
+      const hay=(ex.name+' '+(ex.muscle||'')+' '+(ex.subTags||[]).join(' ')+' '+(ex.customTags||[]).join(' ')).toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
@@ -1718,21 +1868,42 @@ function renderExercises(){
   if(!fil.length){list.innerHTML='<div style="text-align:center;color:var(--text-3);font-size:13px;padding:18px">Inga övningar matchar. Skapa en ny eller rensa filter.</div>';return;}
   list.innerHTML=fil.map(ex=>{
     const usage=exUsageCount(ex.id);
-    const tagPills=(ex.formTags||[]).slice(0,3).map(tid=>{
-      const t=FORM_TAG_BY_ID[tid];if(!t) return '';
-      return `<span class="tag" style="background:${t.color}22;color:${t.color}">${t.label}</span>`;
-    }).join('');
+    const pf=getPrimaryForm(ex);
+    const pfInfo=PRIMARY_FORM_BY_ID[pf]||PRIMARY_FORM_BY_ID.strength;
+    // Sub-tag pills (text-baserade strängar för nya systemet, eller fallback FORM_TAG-objekt)
+    const subTagPills=(ex.subTags||[]).slice(0,3).map(t=>
+      `<span class="tag" style="background:${pfInfo.color}22;color:${pfInfo.color}">${t}</span>`
+    ).join('');
+    // Meta-text per primärform
+    let meta='';
+    if(pf==='strength'){
+      meta=`${ex.muscle||''} · ${ex.defaultSets}×${ex.defaultReps||'–'}${ex.useBodyweight?' · egen vikt':ex.defaultWeight?' · '+ex.defaultWeight+' kg':''}`;
+    }else if(pf==='bodyweight'){
+      meta=`${ex.muscle||''} · ${ex.defaultSets}×${ex.defaultReps||'–'} · egen vikt`;
+    }else if(pf==='running'||pf==='cycling'){
+      const pz=ex.pulseZone?`Z${ex.pulseZone}`:'';
+      const dist=ex.defaultDistance?`${ex.defaultDistance} km`:'';
+      const time=ex.defaultTime?`${ex.defaultTime} min`:'';
+      const setsLabel=ex.defaultSets>1?`${ex.defaultSets}× `:'';
+      meta=[pz,setsLabel+[dist,time].filter(Boolean).join(' · ')].filter(Boolean).join(' · ').trim();
+      if(!meta) meta=pfInfo.label;
+    }else if(pf==='mobility'){
+      meta=`${ex.muscle||''} · ${ex.defaultSets}×${ex.defaultReps||'–'}`;
+    }else{
+      meta=`${ex.defaultSets}×${ex.defaultReps||'–'}`;
+    }
+    // Tumnagel-ikon per form
+    const thumbIcon=pf==='running'?'ti-run':pf==='cycling'?'ti-bike':pf==='mobility'?'ti-leaf':pf==='bodyweight'?'ti-stretching':'ti-barbell';
     return `
     <div class="ex-row" onclick="openExerciseDetail('${ex.id}')" style="cursor:pointer">
-      <div class="ex-row-thumb" style="background:${catGrad[ex.formTags?.[0]==='kondition'?'cardio':ex.formTags?.[0]==='egenvikt'?'bodyweight':ex.formTags?.[0]==='rorlighet'?'mobility':'strength']||catGrad.strength}"><i class="ti ti-barbell"></i></div>
+      <div class="ex-row-thumb" style="background:${pfInfo.color}"><i class="ti ${thumbIcon}"></i></div>
       <div class="ex-row-info">
         <div class="ex-row-name">${ex.name}</div>
-        <div class="ex-row-meta">${ex.muscle} · ${ex.defaultSets}×${ex.defaultReps||'–'} ${usage?`· i ${usage} pass`:''}</div>
-        <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">${tagPills}</div>
+        <div class="ex-row-meta">${meta}${usage?` · i ${usage} pass`:''}</div>
+        ${subTagPills?`<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">${subTagPills}</div>`:''}
       </div>
-      <button class="fav-btn ${ex.fav?'on':''}" onclick="event.stopPropagation();toggleExerciseFav('${ex.id}')" title="${ex.fav?'Ta bort favorit':'Markera som favorit'}">
-        <i class="ti ${ex.fav?'ti-star-filled':'ti-star'}"></i>
-      </button>
+      ${ex.fav?'<span style="font-size:20px;line-height:1;flex-shrink:0" title="Favorit">⭐</span>':''}
+      <i class="ti ti-chevron-right" style="color:var(--text-3);font-size:18px"></i>
     </div>`;
   }).join('');
 }
@@ -1767,29 +1938,92 @@ function openNewExercise(){
   editingExId=null;
   document.getElementById('ex-modal-title').textContent='Ny övning';
   document.getElementById('ex-f-name').value='';
+  document.getElementById('ex-f-fav').checked=false;
+  document.getElementById('ex-f-note').value='';
+  document.getElementById('ex-f-custom').value='';
+  // Återställ alla form-specifika fält
   document.getElementById('ex-f-muscle').value=MUSCLE_TAGS[0];
   document.getElementById('ex-f-sets').value='3';
   document.getElementById('ex-f-reps').value='10';
-  document.getElementById('ex-f-note').value='';
-  document.getElementById('ex-f-custom').value='';
-  document.querySelectorAll('#ex-f-form-tags .filter-chip').forEach(c=>c.classList.remove('active'));
+  document.getElementById('ex-f-weight').value='';
+  document.getElementById('ex-f-bodyweight').checked=false;
+  document.getElementById('ex-f-bw-muscle').value=MUSCLE_TAGS[0];
+  document.getElementById('ex-f-bw-sets').value='3';
+  document.getElementById('ex-f-bw-reps').value='10';
+  document.getElementById('ex-f-pulse').value='';
+  document.getElementById('ex-f-c-sets').value='1';
+  document.getElementById('ex-f-c-dist').value='';
+  document.getElementById('ex-f-c-time').value='';
+  document.getElementById('ex-f-m-area').value=MUSCLE_TAGS[0];
+  document.getElementById('ex-f-m-sets').value='3';
+  document.getElementById('ex-f-m-reps').value='10';
+  document.getElementById('ex-f-o-sets').value='1';
+  document.getElementById('ex-f-o-reps').value='1';
+  // Rensa alla sub-tag-chips
+  document.querySelectorAll('#ex-f-strength-tags .filter-chip, #ex-f-cardio-tags .filter-chip').forEach(c=>c.classList.remove('active'));
+  // Default: Styrketräning
+  setExPrimary('strength');
+  toggleBodyweightField();
   openModal('m-ex-edit');
+}
+
+function toggleBodyweightField(){
+  const cb=document.getElementById('ex-f-bodyweight');
+  const w=document.getElementById('ex-f-weight');
+  if(!cb||!w) return;
+  if(cb.checked){
+    w.value=userProfile.weightKg||'';
+    w.disabled=true;
+    w.style.opacity='0.5';
+    w.placeholder='Din vikt';
+  }else{
+    w.disabled=false;
+    w.style.opacity='1';
+    w.placeholder='–';
+  }
 }
 
 function openExerciseDetail(exId){
   const ex=findExercise(exId);
   if(!ex) return;
   editingExId=exId;
+  const pf=ex.primaryForm||'strength';
   document.getElementById('ex-modal-title').textContent='Redigera övning';
   document.getElementById('ex-f-name').value=ex.name;
-  document.getElementById('ex-f-muscle').value=ex.muscle;
-  document.getElementById('ex-f-sets').value=ex.defaultSets;
-  document.getElementById('ex-f-reps').value=ex.defaultReps;
+  document.getElementById('ex-f-fav').checked=!!ex.fav;
   document.getElementById('ex-f-note').value=ex.note||'';
   document.getElementById('ex-f-custom').value=(ex.customTags||[]).join(', ');
-  document.querySelectorAll('#ex-f-form-tags .filter-chip').forEach(c=>{
+  // Aktivera rätt primärform först — visar/döljer fältsektioner
+  setExPrimary(pf);
+  // Fyll fält baserat på primärform
+  if(pf==='strength'){
+    document.getElementById('ex-f-muscle').value=ex.muscle||MUSCLE_TAGS[0];
+    document.getElementById('ex-f-sets').value=ex.defaultSets||3;
+    document.getElementById('ex-f-reps').value=ex.defaultReps||10;
+    document.getElementById('ex-f-weight').value=ex.defaultWeight||'';
+    document.getElementById('ex-f-bodyweight').checked=!!ex.useBodyweight;
+    toggleBodyweightField();
+  }else if(pf==='bodyweight'){
+    document.getElementById('ex-f-bw-muscle').value=ex.muscle||MUSCLE_TAGS[0];
+    document.getElementById('ex-f-bw-sets').value=ex.defaultSets||3;
+    document.getElementById('ex-f-bw-reps').value=ex.defaultReps||10;
+  }else if(pf==='running'||pf==='cycling'){
+    document.getElementById('ex-f-pulse').value=ex.pulseZone||'';
+    document.getElementById('ex-f-c-sets').value=ex.defaultSets||1;
+    document.getElementById('ex-f-c-dist').value=ex.defaultDistance||'';
+    document.getElementById('ex-f-c-time').value=ex.defaultTime||'';
+  }else if(pf==='mobility'){
+    document.getElementById('ex-f-m-area').value=ex.muscle||MUSCLE_TAGS[0];
+    document.getElementById('ex-f-m-sets').value=ex.defaultSets||3;
+    document.getElementById('ex-f-m-reps').value=ex.defaultReps||10;
+  }else if(pf==='other'||pf==='group'){
+    document.getElementById('ex-f-o-sets').value=ex.defaultSets||1;
+    document.getElementById('ex-f-o-reps').value=ex.defaultReps||1;
+  }
+  // Återställ sub-taggar (rensa alla, aktivera matchande)
+  document.querySelectorAll('#ex-f-strength-tags .filter-chip, #ex-f-cardio-tags .filter-chip').forEach(c=>{
     const tid=c.getAttribute('data-tag');
-    c.classList.toggle('active',(ex.formTags||[]).includes(tid));
+    c.classList.toggle('active',(ex.subTags||[]).includes(tid));
   });
   openModal('m-ex-edit');
 }
@@ -1797,19 +2031,57 @@ function openExerciseDetail(exId){
 function saveExerciseEdit(){
   const name=document.getElementById('ex-f-name').value.trim();
   if(!name) return;
-  const muscle=document.getElementById('ex-f-muscle').value;
-  const sets=parseInt(document.getElementById('ex-f-sets').value)||3;
-  const reps=parseInt(document.getElementById('ex-f-reps').value)||0;
+  const pf=getCurrentPrimaryForm();
+  const fav=document.getElementById('ex-f-fav').checked;
   const note=document.getElementById('ex-f-note').value.trim();
   const custom=document.getElementById('ex-f-custom').value.split(',').map(s=>s.trim()).filter(Boolean);
-  const formTags=Array.from(document.querySelectorAll('#ex-f-form-tags .filter-chip.active')).map(c=>c.getAttribute('data-tag'));
+  // Form-specifika fält samlas in beroende på primärform
+  let muscle='',sets=3,reps=10,defaultWeight=null,useBodyweight=false;
+  let pulseZone=null,defaultDistance=null,defaultTime=null;
+  let subTags=[],formTags=[];
+  if(pf==='strength'){
+    muscle=document.getElementById('ex-f-muscle').value;
+    sets=parseInt(document.getElementById('ex-f-sets').value)||3;
+    reps=parseInt(document.getElementById('ex-f-reps').value)||0;
+    useBodyweight=document.getElementById('ex-f-bodyweight').checked;
+    const wVal=document.getElementById('ex-f-weight').value.trim();
+    defaultWeight=useBodyweight?(userProfile.weightKg||null):(wVal===''?null:parseFloat(wVal)||null);
+    subTags=Array.from(document.querySelectorAll('#ex-f-strength-tags .filter-chip.active')).map(c=>c.getAttribute('data-tag'));
+    formTags=['gym','styrka'];
+  }else if(pf==='bodyweight'){
+    muscle=document.getElementById('ex-f-bw-muscle').value;
+    sets=parseInt(document.getElementById('ex-f-bw-sets').value)||3;
+    reps=parseInt(document.getElementById('ex-f-bw-reps').value)||0;
+    useBodyweight=true;
+    defaultWeight=userProfile.weightKg||null;
+    formTags=['egenvikt'];
+  }else if(pf==='running'||pf==='cycling'){
+    const pzv=document.getElementById('ex-f-pulse').value;
+    pulseZone=pzv?parseInt(pzv):null;
+    sets=parseInt(document.getElementById('ex-f-c-sets').value)||1;
+    const dVal=document.getElementById('ex-f-c-dist').value.trim();
+    defaultDistance=dVal===''?null:parseFloat(dVal)||null;
+    const tVal=document.getElementById('ex-f-c-time').value.trim();
+    defaultTime=tVal===''?null:parseFloat(tVal)||null;
+    subTags=Array.from(document.querySelectorAll('#ex-f-cardio-tags .filter-chip.active')).map(c=>c.getAttribute('data-tag'));
+    formTags=['kondition'];
+  }else if(pf==='mobility'){
+    muscle=document.getElementById('ex-f-m-area').value;
+    sets=parseInt(document.getElementById('ex-f-m-sets').value)||3;
+    reps=parseInt(document.getElementById('ex-f-m-reps').value)||0;
+    formTags=['rorlighet'];
+  }else if(pf==='other'||pf==='group'){
+    sets=parseInt(document.getElementById('ex-f-o-sets').value)||1;
+    reps=parseInt(document.getElementById('ex-f-o-reps').value)||1;
+  }
   let savedExId=editingExId;
+  const exData={name,primaryForm:pf,fav,note,customTags:custom,subTags,formTags,muscle,defaultSets:sets,defaultReps:reps,defaultWeight,useBodyweight,pulseZone,defaultDistance,defaultTime};
   if(editingExId){
     const ex=findExercise(editingExId);
-    if(ex){ex.name=name;ex.muscle=muscle;ex.defaultSets=sets;ex.defaultReps=reps;ex.note=note;ex.customTags=custom;ex.formTags=formTags;}
+    if(ex) Object.assign(ex,exData);
   }else{
     const newId='ex'+Date.now()+Math.floor(Math.random()*10000);
-    exercises.push({id:newId,name,muscle,defaultSets:sets,defaultReps:reps,note,customTags:custom,formTags,mediaUrl:null,fav:false});
+    exercises.push({id:newId,mediaUrl:null,...exData});
     savedExId=newId;
   }
   // Auto-lägg in i passet om vi kom från "Skapa ny övning"-flödet i bank-väljaren
@@ -1890,10 +2162,19 @@ function startLog(){
   (selectedPass.exerciseRefs||[]).forEach(ref=>{
     const ex=findExercise(ref.exId);
     if(!ex) return;
-    const sets=ref.sets??ex.defaultSets??3;
-    const reps=ref.reps??ex.defaultReps??0;
-    const cat=(ex.formTags||[]).includes('kondition')?'cardio':(ex.formTags||[]).includes('egenvikt')?'bodyweight':(ex.formTags||[]).includes('rorlighet')?'mobility':'strength';
-    loggedExs.push({name:ex.name,cat,sets:Array(sets).fill(null).map(()=>({w:0,r:reps,done:false}))});
+    const pf=ex.primaryForm||'strength';
+    const cat=(pf==='running'||pf==='cycling')?'cardio':(pf==='mobility')?'mobility':(pf==='bodyweight')?'bodyweight':'strength';
+    const sets=ref.sets??ex.defaultSets??(cat==='cardio'?1:3);
+    let defW=0,defR=ref.reps??ex.defaultReps??0;
+    if(cat==='cardio'){
+      defW=ex.defaultDistance||0;
+      defR=ex.defaultTime||0;
+    }else if(ex.useBodyweight){
+      defW=userProfile.weightKg||0;
+    }else if(cat==='strength'&&ex.defaultWeight){
+      defW=ex.defaultWeight;
+    }
+    loggedExs.push({name:ex.name,cat,sets:Array(sets).fill(null).map(()=>({w:defW,r:defR,done:false}))});
   });
   document.getElementById('log-select').style.display='none';
   document.getElementById('log-active').style.display='flex';
@@ -1914,19 +2195,37 @@ function renderLogExs(){
         <div class="ex-block-name">${ex.name}</div>
         <button onclick="rmLogEx(${ei})" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:14px"><i class="ti ti-x"></i></button>
       </div>
-      <div class="set-labels"><span>Set</span><span>${ex.cat==='cardio'?'Dist':'Vikt'}</span><span>${ex.cat==='cardio'?'Tid':'Reps'}</span><span></span></div>
-      ${ex.sets.map((s,si)=>`
+      <div class="set-labels"><span>Set</span><span>${ex.cat==='cardio'?'Dist (km)':'Vikt (kg)'}</span><span>${ex.cat==='cardio'?'Tid (min)':'Reps'}</span><span></span></div>
+      ${ex.sets.map((s,si)=>{
+        const wStep=ex.cat==='cardio'?0.5:5;
+        const rStep=ex.cat==='cardio'?1:1;
+        return `
         <div class="set-row">
           <div class="set-num">${si+1}</div>
-          <input class="set-input ${s.done?'done':''}" type="number" value="${s.w||''}" placeholder="–" onchange="updS(${ei},${si},'w',this.value)" inputmode="decimal">
-          <input class="set-input ${s.done?'done':''}" type="number" value="${s.r||''}" placeholder="–" onchange="updS(${ei},${si},'r',this.value)" inputmode="decimal">
+          <div class="set-stepper ${s.done?'done':''}">
+            <button class="stepper-btn" onclick="stepS(${ei},${si},'w',${-wStep})">−</button>
+            <input type="number" value="${s.w||''}" placeholder="–" onchange="updS(${ei},${si},'w',this.value)" inputmode="decimal" step="${wStep}">
+            <button class="stepper-btn" onclick="stepS(${ei},${si},'w',${wStep})">+</button>
+          </div>
+          <div class="set-stepper ${s.done?'done':''}">
+            <button class="stepper-btn" onclick="stepS(${ei},${si},'r',${-rStep})">−</button>
+            <input type="number" value="${s.r||''}" placeholder="–" onchange="updS(${ei},${si},'r',this.value)" inputmode="decimal" step="${rStep}">
+            <button class="stepper-btn" onclick="stepS(${ei},${si},'r',${rStep})">+</button>
+          </div>
           <button class="set-check ${s.done?'done':''}" onclick="togS(${ei},${si})"><i class="ti ti-check"></i></button>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
       <button class="add-set-btn" onclick="addS(${ei})"><i class="ti ti-plus" style="font-size:11px"></i> Set</button>
     </div>`).join('');
 }
 
 function updS(ei,si,k,v){loggedExs[ei].sets[si][k]=parseFloat(v)||0;}
+function stepS(ei,si,k,delta){
+  const cur=parseFloat(loggedExs[ei].sets[si][k])||0;
+  const next=Math.max(0,Math.round((cur+delta)*100)/100);
+  loggedExs[ei].sets[si][k]=next;
+  renderLogExs();
+}
 function togS(ei,si){loggedExs[ei].sets[si].done=!loggedExs[ei].sets[si].done;renderLogExs();}
 function addS(ei){const last=loggedExs[ei].sets.at(-1)||{w:0,r:0};loggedExs[ei].sets.push({...last,done:false});renderLogExs();}
 function rmLogEx(ei){loggedExs.splice(ei,1);renderLogExs();}
@@ -2494,18 +2793,72 @@ function bar(id,data,color,tc,gc){
 
 /* ========== INIT ========== */
 function populateExModal(){
-  const ms=document.getElementById('ex-f-muscle');
-  if(ms&&!ms.options.length) ms.innerHTML=MUSCLE_TAGS.map(m=>`<option>${m}</option>`).join('');
-  const nc=document.getElementById('ne-cat');
-  if(nc&&!nc.options.length) nc.innerHTML=MUSCLE_TAGS.map(m=>`<option>${m}</option>`).join('');
-  const ft=document.getElementById('ex-f-form-tags');
-  if(ft&&!ft.children.length) ft.innerHTML=FORM_TAGS.map(t=>`<button class="filter-chip" data-tag="${t.id}" onclick="toggleExFormTag(this)">${t.label}</button>`).join('');
+  // Muskel-dropdowns (alla varianter)
+  ['ex-f-muscle','ex-f-bw-muscle','ex-f-m-area','ne-cat'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el&&!el.options.length) el.innerHTML=MUSCLE_TAGS.map(m=>`<option>${m}</option>`).join('');
+  });
+  // Primär träningsform-chips
+  const pf=document.getElementById('ex-f-primary');
+  if(pf&&!pf.children.length){
+    pf.innerHTML=PRIMARY_FORMS.map(f=>`<button class="filter-chip" data-form="${f.id}" onclick="setExPrimary('${f.id}')">${f.icon} ${f.label}</button>`).join('');
+  }
+  // Pulszon-options
+  const pz=document.getElementById('ex-f-pulse');
+  if(pz&&pz.options.length<=1){
+    PULSE_ZONES.forEach(z=>{
+      const opt=document.createElement('option');
+      opt.value=z.id;
+      opt.textContent=z.label+' — '+z.desc;
+      pz.appendChild(opt);
+    });
+  }
+  // Strength sub-taggar (statiska)
+  const st=document.getElementById('ex-f-strength-tags');
+  if(st&&!st.children.length){
+    const stags=['Gym','Dynamisk styrka','Explosivitet','Powerlifting','Maxstyrka','Hypertrofi'];
+    st.innerHTML=stags.map(t=>`<button class="filter-chip" data-tag="${t}" onclick="toggleExFormTag(this)">${t}</button>`).join('');
+  }
+}
+
+function setExPrimary(formId){
+  // Aktivera vald form-chip
+  document.querySelectorAll('#ex-f-primary .filter-chip').forEach(c=>{
+    c.classList.toggle('active',c.getAttribute('data-form')===formId);
+  });
+  document.getElementById('ex-f-primary').setAttribute('data-current',formId);
+  // Visa rätt fält-sektion
+  const sections={
+    'ex-fields-strength':formId==='strength',
+    'ex-fields-bodyweight':formId==='bodyweight',
+    'ex-fields-cardio':formId==='running'||formId==='cycling',
+    'ex-fields-mobility':formId==='mobility',
+    'ex-fields-other':formId==='other'||formId==='group'
+  };
+  Object.entries(sections).forEach(([id,show])=>{
+    const el=document.getElementById(id);
+    if(el) el.style.display=show?'flex':'none';
+  });
+  // Fyll cardio-sub-taggar (beror på run/bike)
+  if(formId==='running'||formId==='cycling'){
+    const ct=document.getElementById('ex-f-cardio-tags');
+    if(ct){
+      const tags=formId==='running'?RUN_SUBTAGS:BIKE_SUBTAGS;
+      ct.innerHTML=tags.map(t=>`<button class="filter-chip" data-tag="${t}" onclick="toggleExFormTag(this)">${t}</button>`).join('');
+    }
+  }
+}
+
+function getCurrentPrimaryForm(){
+  return document.getElementById('ex-f-primary')?.getAttribute('data-current')||'strength';
 }
 
 loadState();
 migrateNestedToBank();
+migrateExercisesToPrimaryForm();
 saveState();
 populateExModal();
+updateThemeUI();
 renderGoals();
 renderHomeHero();
 renderCalendar();
