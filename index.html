@@ -244,6 +244,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .ex-row-name{font-size:13px;font-weight:700}
 .ex-row-meta{font-size:11px;color:var(--text-2);margin-top:1px}
 .fav-btn{width:34px;height:34px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border-md);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-2);font-size:17px;transition:all 0.14s;flex-shrink:0}
+.move-btn{width:28px;height:18px;border-radius:5px;background:var(--surface-2);border:1px solid var(--border);color:var(--text-2);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-size:14px;line-height:1}
+.move-btn:hover{background:var(--surface-3);color:var(--text-1)}
+.move-btn:active{background:var(--accent);color:#fff}
 .remove-btn{width:36px;height:36px;border-radius:50%;background:#ffe4dc;border:1.5px solid #e8200a;color:#e8200a;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;flex-shrink:0;padding:0;transition:all 0.14s}
 .remove-btn:hover{background:#e8200a;color:#fff}
 .remove-btn i{font-size:18px;line-height:1}
@@ -416,7 +419,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <button class="back-btn" onclick="backToPlan()"><i class="ti ti-arrow-left"></i> Tillbaka</button>
       <div class="detail-title" id="dd-title">Passnamn</div>
       <button class="btn-sm" onclick="openEditPass()" style="background:var(--surface-2);color:var(--text-1)" title="Redigera pass"><i class="ti ti-edit"></i></button>
-      <button class="btn-sm btn-acc" onclick="openPickExerciseModal()"><i class="ti ti-plus"></i> Övning</button>
+      <button class="btn-sm btn-acc" onclick="openPickExerciseModal()" title="Lägg till övning"><i class="ti ti-plus"></i></button>
     </div>
     <div class="pass-hero" id="dd-hero">
       <div class="pass-hero-content">
@@ -437,6 +440,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <div id="dd-exercises"></div>
     <button class="btn-ghost" onclick="openPickExerciseModal()"><i class="ti ti-adjustments-horizontal"></i> Justera övningar i passet</button>
+    <button class="btn-primary" onclick="startPassFromDetail()" style="margin-top:6px"><i class="ti ti-player-play-filled"></i> Starta pass</button>
+    <button class="btn-ghost" onclick="deletePass()" style="margin-top:18px;color:#e8200a;border-color:#e8200a44;font-weight:700"><i class="ti ti-trash"></i> Ta bort detta pass</button>
   </div>
 </div>
 
@@ -628,6 +633,55 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div><label class="field-label">Kategori</label><select class="field-select" id="nf-cat"><option value="strength">Styrketräning</option><option value="cardio">Kondition</option><option value="bodyweight">Egen vikt</option><option value="mobility">Rörlighet/Yoga</option></select></div>
       <button class="btn-primary" onclick="addForm()"><i class="ti ti-check"></i> Skapa</button>
     </div>
+  </div>
+</div>
+
+<div class="modal" id="m-start-other" onclick="closeBg(event,'m-start-other')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+
+    <div id="so-view-main">
+      <div class="modal-title">Starta pass</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="card" onclick="showSoView('select')" style="display:flex;align-items:center;gap:12px;padding:14px;cursor:pointer;text-align:left;border:0.5px solid var(--border);background:var(--surface);font-family:inherit;color:var(--text-1);width:100%">
+          <div style="width:42px;height:42px;border-radius:12px;background:var(--g2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0"><i class="ti ti-list"></i></div>
+          <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">Välj från mina pass</div><div style="font-size:11px;color:var(--text-2);margin-top:2px">Filtrera och starta ett befintligt pass</div></div>
+          <i class="ti ti-chevron-right" style="color:var(--text-3);font-size:18px"></i>
+        </button>
+        <button class="card" onclick="showSoView('spontan')" style="display:flex;align-items:center;gap:12px;padding:14px;cursor:pointer;text-align:left;border:0.5px solid var(--border);background:var(--surface);font-family:inherit;color:var(--text-1);width:100%">
+          <div style="width:42px;height:42px;border-radius:12px;background:var(--g3);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0"><i class="ti ti-bolt"></i></div>
+          <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">Spontanpass</div><div style="font-size:11px;color:var(--text-2);margin-top:2px">Logga as-you-go utan plan</div></div>
+          <i class="ti ti-chevron-right" style="color:var(--text-3);font-size:18px"></i>
+        </button>
+        <button class="card" onclick="showSoView('ai')" style="display:flex;align-items:center;gap:12px;padding:14px;cursor:pointer;text-align:left;border:0.5px solid var(--border);background:var(--surface);font-family:inherit;color:var(--text-1);width:100%">
+          <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#5b52f0,#a855f7);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0"><i class="ti ti-sparkles"></i></div>
+          <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">Fråga AI om pass</div><div style="font-size:11px;color:var(--text-2);margin-top:2px">Få förslag baserat på vad du vill köra</div></div>
+          <i class="ti ti-chevron-right" style="color:var(--text-3);font-size:18px"></i>
+        </button>
+      </div>
+    </div>
+
+    <div id="so-view-select" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><button class="back-btn" onclick="showSoView('main')"><i class="ti ti-arrow-left"></i> Tillbaka</button><div class="modal-title" style="margin:0">Välj pass</div></div>
+      <input class="search-bar" id="so-pass-search" placeholder="Sök pass..." oninput="renderSoPassList()" style="margin-bottom:10px">
+      <div class="chip-row" id="so-pass-form-chips" style="margin-bottom:10px"></div>
+      <div id="so-pass-list" style="display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+
+    <div id="so-view-spontan" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><button class="back-btn" onclick="showSoView('main')"><i class="ti ti-arrow-left"></i> Tillbaka</button><div class="modal-title" style="margin:0">Spontanpass</div></div>
+      <div style="font-size:13px;color:var(--text-2);margin-bottom:12px;line-height:1.5">Välj träningsform — sedan loggar du övningar löpande. Passet sparas i din historik när du avslutar.</div>
+      <div style="display:flex;flex-direction:column;gap:6px" id="so-spontan-forms"></div>
+    </div>
+
+    <div id="so-view-ai" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><button class="back-btn" onclick="showSoView('main')"><i class="ti ti-arrow-left"></i> Tillbaka</button><div class="modal-title" style="margin:0">Fråga AI</div></div>
+      <div class="notice" style="margin-bottom:12px">⚠️ AI-coachen är just nu mockad. Riktig Claude API-koppling kommer i etapp 4.</div>
+      <label class="field-label">Vad vill du köra?</label>
+      <textarea class="field-input" id="so-ai-prompt" rows="3" placeholder="T.ex. 'Jag står på gymmet och vill köra ett 20 min pass med fokus på ben och rygg. Ge mig 2 övningar av varje.'" style="resize:vertical;min-height:80px;margin-bottom:10px"></textarea>
+      <button class="btn-primary" onclick="askAiForPass()"><i class="ti ti-sparkles"></i> Fråga AI</button>
+      <div id="so-ai-response" style="margin-top:14px"></div>
+    </div>
+
   </div>
 </div>
 
@@ -1262,7 +1316,7 @@ function migrateNestedToBank(){
           let exObj=byName.get(key);
           if(!exObj){
             exObj={
-              id:'ex'+Date.now()+Math.floor(Math.random()*10000),
+              id:crypto.randomUUID(),
               name:ex.name,
               muscle:muscle,
               formTags:inferFormTags(ex.cat,form.cat),
@@ -1308,11 +1362,11 @@ function formatDateLong(iso){
 }
 function addPlan(iso,passId){
   const r=findPass(passId);if(!r) return;
-  plannedWorkouts.push({id:'pw'+Date.now()+Math.floor(Math.random()*1000),date:iso,passId,formId:r.form.id,notes:''});
+  plannedWorkouts.push({id:crypto.randomUUID(),date:iso,passId,formId:r.form.id,notes:''});
   saveState();
 }
 function addRestDay(iso){
-  plannedWorkouts.push({id:'pw'+Date.now()+Math.floor(Math.random()*1000),date:iso,passId:null,isRest:true,notes:'Vila'});
+  plannedWorkouts.push({id:crypto.randomUUID(),date:iso,passId:null,isRest:true,notes:'Vila'});
   saveState();
 }
 function removePlan(planId){
@@ -1550,7 +1604,7 @@ function addForm(){
   const icon=document.getElementById('nf-icon').value.trim()||'💪';
   const cat=document.getElementById('nf-cat').value;
   if(!name) return;
-  trainingForms.push({id:'f'+Date.now(),name,icon,cat,passTypes:[]});
+  trainingForms.push({id:crypto.randomUUID(),name,icon,cat,passTypes:[]});
   closeModal('m-add-form');
   renderPassList();
   saveState();
@@ -1574,10 +1628,30 @@ function addPassFromNew(){
   const formTags=Array.from(document.querySelectorAll('#np-form-tags .filter-chip.active')).map(c=>c.getAttribute('data-tag'));
   const f=trainingForms.find(x=>x.id===formId);
   if(!f) return;
-  f.passTypes.push({id:'p'+Date.now(),name,desc,color:'#5b52f0',exerciseRefs:[],formTags});
+  const newPassId=crypto.randomUUID();
+  f.passTypes.push({id:newPassId,name,desc,color:'#5b52f0',exerciseRefs:[],formTags});
+  // Stäng new-pass-modalen ordentligt + tvinga bort den från klick-event-stacken
   closeModal('m-new-pass');
+  const oldModal=document.getElementById('m-new-pass');
+  if(oldModal){oldModal.style.pointerEvents='none';oldModal.style.opacity='0';}
   saveState();
   renderPassList();
+  // Hoppa direkt in i passet så användaren kan lägga till övningar
+  openDetail(formId,newPassId);
+  // Vänta tills overlay-animation är helt klar innan bank-väljaren öppnas
+  setTimeout(()=>{
+    if(oldModal){oldModal.style.pointerEvents='';oldModal.style.opacity='';}
+    openPickExerciseModal();
+  },400);
+}
+
+function startPassFromDetail(){
+  if(!curPassId) return;
+  const r=findPass(curPassId);
+  if(!r) return;
+  selectedPass={...r.pass,formName:r.form.name,formCat:r.form.cat,formIcon:r.form.icon};
+  navigate('page-log');
+  setTimeout(startLog,80);
 }
 
 function openEditPass(){
@@ -1683,6 +1757,10 @@ function renderDetailExs(pass){
         <div class="ex-row-thumb" style="background:${catGrad[grad]||catGrad.strength}"><i class="ti ti-barbell"></i></div>
         <div class="ex-row-info"><div class="ex-row-name">${ex.name}</div><div class="ex-row-meta">${repStr}</div></div>
         ${ex.fav?'<span style="font-size:18px;line-height:1;flex-shrink:0" title="Favorit">⭐</span>':''}
+        <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
+          <button class="move-btn" onclick="event.stopPropagation();moveExInPass('${pass.id}',${refIdx},-1)" title="Flytta upp"><i class="ti ti-chevron-up"></i></button>
+          <button class="move-btn" onclick="event.stopPropagation();moveExInPass('${pass.id}',${refIdx},1)" title="Flytta ner"><i class="ti ti-chevron-down"></i></button>
+        </div>
         <button class="remove-btn" onclick="event.stopPropagation();removeRefFromPass('${pass.id}',${refIdx})" title="Ta bort från passet"><i class="ti ti-trash"></i></button>
       </div>`;
     });
@@ -1694,6 +1772,17 @@ function removeRefFromPass(passId,refIdx){
   const r=findPass(passId);
   if(!r) return;
   r.pass.exerciseRefs.splice(refIdx,1);
+  saveState();
+  renderDetailExs(r.pass);
+}
+
+function moveExInPass(passId,refIdx,dir){
+  const r=findPass(passId);
+  if(!r) return;
+  const refs=r.pass.exerciseRefs||[];
+  const newIdx=refIdx+dir;
+  if(newIdx<0||newIdx>=refs.length) return;
+  [refs[refIdx],refs[newIdx]]=[refs[newIdx],refs[refIdx]];
   saveState();
   renderDetailExs(r.pass);
 }
@@ -1806,7 +1895,7 @@ function addExToPlan(){
   let ex=exercises.find(e=>e.name.toLowerCase().trim()===name.toLowerCase().trim());
   if(!ex){
     ex={
-      id:'ex'+Date.now()+Math.floor(Math.random()*10000),
+      id:crypto.randomUUID(),
       name,muscle,
       formTags:inferFormTags('strength',f?.cat||'strength'),
       customTags:[],
@@ -2232,7 +2321,7 @@ function rmLogEx(ei){loggedExs.splice(ei,1);renderLogExs();}
 function setFeel(n,btn){feelRating=n;document.querySelectorAll('.feel-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');}
 function finishLog(){
   workoutHistory.push({
-    id:'w'+Date.now(),
+    id:crypto.randomUUID(),
     date:new Date().toISOString(),
     passName:selectedPass?.name||'Pass',
     formName:selectedPass?.formName||'',
@@ -2293,10 +2382,10 @@ function renderHomeHero(){
     el.innerHTML=`
       <div class="hero-label">${dateLabel}</div>
       <div class="hero-title">Inget pass planerat</div>
-      <div class="hero-sub">Planera idag eller välj ett pass i Träna</div>
+      <div class="hero-sub">Starta ett annat pass eller planera in idag</div>
       <div class="hero-btns">
-        <button class="hero-btn-main" onclick="openDayModal('${todayStr}')"><i class="ti ti-calendar-plus"></i> Planera</button>
-        <button class="hero-btn-sec" onclick="navigate('page-log')">Träna</button>
+        <button class="hero-btn-main" onclick="openStartOther()"><i class="ti ti-player-play-filled"></i> Starta annat pass</button>
+        <button class="hero-btn-sec" onclick="openDayModal('${todayStr}')"><i class="ti ti-calendar-plus"></i> Planera</button>
       </div>`;
     return;
   }
@@ -2310,7 +2399,7 @@ function renderHomeHero(){
       <div class="hero-title">Vilodag 😴</div>
       <div class="hero-sub">Återhämtning — ta hand om dig själv${moreCount>0?` · +${moreCount} mer planerat`:''}</div>
       <div class="hero-btns">
-        <button class="hero-btn-main" onclick="navigate('page-log')"><i class="ti ti-player-play-filled"></i> Träna ändå</button>
+        <button class="hero-btn-main" onclick="openStartOther()"><i class="ti ti-player-play-filled"></i> Träna ändå</button>
         <button class="hero-btn-sec" onclick="openDayModal('${todayStr}')">Ändra</button>
       </div>`;
     return;
@@ -2328,8 +2417,8 @@ function renderHomeHero(){
     <div class="hero-sub">${r.form.name} · ${cntEx(r.pass)} övningar${moreCount>0?` · +${moreCount} mer idag`:''}</div>
     ${tags?`<div class="hero-tags">${tags}</div>`:''}
     <div class="hero-btns">
-      <button class="hero-btn-main" onclick="startPlannedPass('${first.passId}')"><i class="ti ti-player-play-filled"></i> Starta pass</button>
-      <button class="hero-btn-sec" onclick="openDayModal('${todayStr}')">Ändra</button>
+      <button class="hero-btn-main" onclick="startPlannedPass('${first.passId}')"><i class="ti ti-player-play-filled"></i> Starta dagens pass</button>
+      <button class="hero-btn-sec" onclick="openStartOther()">Starta annat</button>
     </div>`;
 }
 
@@ -2339,6 +2428,122 @@ function startPlannedPass(passId){
   selectedPass={...r.pass,formName:r.form.name,formCat:r.form.cat,formIcon:r.form.icon};
   navigate('page-log');
   setTimeout(startLog,80);
+}
+
+/* ========== STARTA ANNAT PASS ========== */
+let soFormFilter='';
+
+function openStartOther(){
+  showSoView('main');
+  openModal('m-start-other');
+}
+
+function showSoView(view){
+  ['main','select','spontan','ai'].forEach(v=>{
+    const el=document.getElementById('so-view-'+v);
+    if(el) el.style.display=v===view?'block':'none';
+  });
+  if(view==='select') renderSoPassList();
+  if(view==='spontan') renderSoSpontanForms();
+  if(view==='ai'){
+    document.getElementById('so-ai-prompt').value='';
+    document.getElementById('so-ai-response').innerHTML='';
+  }
+}
+
+function renderSoPassList(){
+  // Filter-chips för träningsform
+  const chips=document.getElementById('so-pass-form-chips');
+  if(chips&&!chips.children.length){
+    chips.innerHTML=`<button class="filter-chip ${!soFormFilter?'active':''}" onclick="setSoFormFilter('')">Alla</button>`+
+      trainingForms.map(f=>`<button class="filter-chip ${soFormFilter===f.id?'active':''}" onclick="setSoFormFilter('${f.id}')">${f.icon} ${f.name}</button>`).join('');
+  }else if(chips){
+    chips.querySelectorAll('.filter-chip').forEach(c=>{
+      const fid=c.getAttribute('onclick').match(/'([^']*)'/)[1];
+      c.classList.toggle('active',fid===soFormFilter);
+    });
+  }
+  const q=(document.getElementById('so-pass-search')?.value||'').toLowerCase().trim();
+  const all=[];
+  trainingForms.forEach(f=>f.passTypes.forEach(p=>all.push({pass:p,form:f})));
+  const fil=all.filter(({pass,form})=>{
+    if(soFormFilter&&form.id!==soFormFilter) return false;
+    if(q){
+      const hay=(pass.name+' '+(pass.desc||'')+' '+form.name).toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  const list=document.getElementById('so-pass-list');
+  if(!fil.length){list.innerHTML='<div style="text-align:center;color:var(--text-3);font-size:13px;padding:18px">Inga pass matchar</div>';return;}
+  list.innerHTML=fil.map(({pass,form})=>`
+    <div class="ex-row" onclick="startPassFromSo('${form.id}','${pass.id}')" style="cursor:pointer">
+      <div class="ex-row-thumb" style="background:${catGrad[form.cat]||catGrad.strength}">${form.icon}</div>
+      <div class="ex-row-info">
+        <div class="ex-row-name">${pass.name}</div>
+        <div class="ex-row-meta">${form.name} · ${cntEx(pass)} övn</div>
+      </div>
+      <i class="ti ti-player-play-filled" style="color:var(--accent);font-size:20px"></i>
+    </div>`).join('');
+}
+
+function setSoFormFilter(id){soFormFilter=id;renderSoPassList();}
+
+function startPassFromSo(formId,passId){
+  closeModal('m-start-other');
+  const r=findPass(passId);
+  if(!r) return;
+  selectedPass={...r.pass,formName:r.form.name,formCat:r.form.cat,formIcon:r.form.icon};
+  navigate('page-log');
+  setTimeout(startLog,80);
+}
+
+function renderSoSpontanForms(){
+  const el=document.getElementById('so-spontan-forms');
+  if(!el) return;
+  el.innerHTML=PRIMARY_FORMS.map(f=>`
+    <button class="card" onclick="startSpontanPass('${f.id}')" style="display:flex;align-items:center;gap:12px;padding:13px;cursor:pointer;text-align:left;border:0.5px solid var(--border);background:var(--surface);font-family:inherit;color:var(--text-1);width:100%">
+      <div style="width:38px;height:38px;border-radius:10px;background:${f.color};color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${f.icon}</div>
+      <div style="flex:1;font-size:14px;font-weight:700">${f.label}</div>
+      <i class="ti ti-chevron-right" style="color:var(--text-3);font-size:18px"></i>
+    </button>`).join('');
+}
+
+function startSpontanPass(formId){
+  const f=PRIMARY_FORM_BY_ID[formId];
+  if(!f) return;
+  const cat=formId==='running'||formId==='cycling'?'cardio':formId==='mobility'?'mobility':formId==='bodyweight'?'bodyweight':'strength';
+  selectedPass={
+    id:'spontan'+Date.now(),
+    name:'Spontanpass · '+f.label,
+    formName:f.label,
+    formCat:cat,
+    formIcon:f.icon,
+    exerciseRefs:[]
+  };
+  closeModal('m-start-other');
+  navigate('page-log');
+  setTimeout(startLog,80);
+}
+
+function askAiForPass(){
+  const prompt=document.getElementById('so-ai-prompt').value.trim();
+  const res=document.getElementById('so-ai-response');
+  if(!prompt){res.innerHTML='<div style="color:#e8200a;font-size:12px">Skriv vad du vill ha för pass först</div>';return;}
+  res.innerHTML='<div style="font-size:12px;color:var(--text-2);padding:8px 0">⏳ AI tänker...</div>';
+  setTimeout(()=>{
+    // Mockad respons baserat på prompt
+    const lower=prompt.toLowerCase();
+    let suggestion='';
+    if(lower.includes('ben')||lower.includes('rygg')){
+      suggestion=`<b>Förslag (mockad):</b><br>• Knäböj 4×8<br>• Marklyft 3×5<br>• Rodd skivstång 4×10<br>• Chins 3×8`;
+    }else if(lower.includes('löp')||lower.includes('intervall')){
+      suggestion=`<b>Förslag (mockad):</b><br>• Uppvärmning 10 min lugnt<br>• 6×400m i Z4 med 90s vila<br>• Nedvarvning 10 min`;
+    }else{
+      suggestion=`<b>Förslag (mockad):</b><br>• Knäböj 4×8<br>• Bänkpress 4×8<br>• Rodd skivstång 4×10<br>• Plankan 3×30s`;
+    }
+    res.innerHTML=`<div style="background:var(--surface-2);border-radius:var(--r);padding:13px;font-size:13px;line-height:1.6">${suggestion}<br><br><i style="font-size:11px;color:var(--text-3)">Riktig AI-koppling till Claude kommer i etapp 4. Då kan coachen lägga in passet direkt i din planering.</i></div>`;
+  },800);
 }
 
 /* ========== GOALS ========== */
