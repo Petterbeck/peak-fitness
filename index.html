@@ -2279,34 +2279,37 @@ function renderDetailExs(pass){
   let html='';
   const refs=pass.exerciseRefs||[];
   if(!refs.length){document.getElementById('dd-exercises').innerHTML='<div style="text-align:center;color:var(--text-3);font-size:13px;padding:18px">Inga övningar ännu. Lägg till eller fråga AI!</div>';return;}
-  // Gruppera på muskel
-  const groups={};
-  refs.forEach((ref,i)=>{
+  // Visa övningar i den ordning de planerats (ingen muskel-gruppering)
+  refs.forEach((ref,refIdx)=>{
     const ex=findExercise(ref.exId);
     if(!ex) return;
-    if(!groups[ex.muscle]) groups[ex.muscle]=[];
-    groups[ex.muscle].push({ref,ex,refIdx:i});
-  });
-  Object.entries(groups).forEach(([muscle,items])=>{
-    html+=`<div class="ex-cat-hdr">${muscle}<button onclick="addExCat('${muscle}')" style="background:none;border:none;color:var(--accent-4);font-size:11px;font-weight:700;cursor:pointer"><i class="ti ti-plus" style="font-size:12px"></i></button></div>`;
-    items.forEach(({ref,ex,refIdx})=>{
-      const sets=ref.sets??ex.defaultSets;
-      const reps=ref.reps??ex.defaultReps;
-      const repStr=reps>0?`${sets}×${reps}`:sets+' set';
-      const firstTag=ex.formTags?.[0];
-      const grad=firstTag==='kondition'?'cardio':firstTag==='egenvikt'?'bodyweight':firstTag==='rorlighet'?'mobility':'strength';
-      html+=`
-      <div class="ex-row" onclick="openExerciseDetail('${ex.id}')" style="cursor:pointer">
-        <div class="ex-row-thumb" style="background:${catGrad[grad]||catGrad.strength}"><i class="ti ti-barbell"></i></div>
-        <div class="ex-row-info"><div class="ex-row-name">${ex.name}</div><div class="ex-row-meta">${repStr}</div></div>
-        ${ex.fav?'<span style="font-size:18px;line-height:1;flex-shrink:0" title="Favorit">⭐</span>':''}
-        <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
-          <button class="move-btn" onclick="event.stopPropagation();moveExInPass('${pass.id}',${refIdx},-1)" title="Flytta upp"><i class="ti ti-chevron-up"></i></button>
-          <button class="move-btn" onclick="event.stopPropagation();moveExInPass('${pass.id}',${refIdx},1)" title="Flytta ner"><i class="ti ti-chevron-down"></i></button>
+    const sets=ref.sets??ex.defaultSets;
+    const reps=ref.reps??ex.defaultReps;
+    const pf=getPrimaryForm(ex);
+    const isCardio=pf==='running'||pf==='cycling';
+    const repStr=isCardio?(reps>0?`${sets}× ${reps} min`:`${sets} varv`):(reps>0?`${sets}×${reps}`:`${sets} set`);
+    const grad=isCardio?'cardio':pf==='bodyweight'?'bodyweight':pf==='mobility'?'mobility':'strength';
+    const muscleTag=ex.muscle?`<span style="background:var(--surface-2);color:var(--text-2);font-size:10px;font-weight:700;padding:2px 7px;border-radius:var(--r-pill);flex-shrink:0">${ex.muscle}</span>`:'';
+    html+=`
+    <div class="ex-row" onclick="openExerciseDetail('${ex.id}')" style="cursor:pointer">
+      <div class="ex-row-thumb" style="background:${catGrad[grad]||catGrad.strength};position:relative">
+        <span style="position:absolute;top:-4px;left:-4px;background:var(--surface);color:var(--text-1);border:1px solid var(--border);font-size:9px;font-weight:800;padding:1px 5px;border-radius:var(--r-pill);min-width:14px;text-align:center">${refIdx+1}</span>
+        <i class="ti ti-barbell"></i>
+      </div>
+      <div class="ex-row-info">
+        <div class="ex-row-name">${ex.name}</div>
+        <div class="ex-row-meta" style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:2px">
+          <span>${repStr}</span>
+          ${muscleTag}
         </div>
-        <button class="remove-btn" onclick="event.stopPropagation();removeRefFromPass('${pass.id}',${refIdx})" title="Ta bort från passet"><i class="ti ti-trash"></i></button>
-      </div>`;
-    });
+      </div>
+      ${ex.fav?'<span style="font-size:18px;line-height:1;flex-shrink:0" title="Favorit">⭐</span>':''}
+      <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
+        <button class="move-btn" onclick="event.stopPropagation();moveExInPass('${pass.id}',${refIdx},-1)" title="Flytta upp" ${refIdx===0?'disabled style="opacity:0.3"':''}><i class="ti ti-chevron-up"></i></button>
+        <button class="move-btn" onclick="event.stopPropagation();moveExInPass('${pass.id}',${refIdx},1)" title="Flytta ner" ${refIdx===refs.length-1?'disabled style="opacity:0.3"':''}><i class="ti ti-chevron-down"></i></button>
+      </div>
+      <button class="remove-btn" onclick="event.stopPropagation();removeRefFromPass('${pass.id}',${refIdx})" title="Ta bort från passet"><i class="ti ti-trash"></i></button>
+    </div>`;
   });
   document.getElementById('dd-exercises').innerHTML=html;
 }
@@ -2806,7 +2809,7 @@ function startLog(){
     }else if(cat==='strength'&&ex.defaultWeight){
       defW=ex.defaultWeight;
     }
-    loggedExs.push({name:ex.name,cat,sets:Array(sets).fill(null).map(()=>({w:defW,r:defR,done:false}))});
+    loggedExs.push({name:ex.name,muscle:ex.muscle,cat,sets:Array(sets).fill(null).map(()=>({w:defW,r:defR,done:false}))});
   });
   document.getElementById('log-select').style.display='none';
   document.getElementById('log-active').style.display='flex';
@@ -2824,8 +2827,12 @@ function renderLogExs(){
     <div class="ex-block">
       <div class="ex-block-head">
         <div class="ex-block-num">${ei+1}</div>
-        <div class="ex-block-name">${ex.name}</div>
-        <button onclick="rmLogEx(${ei})" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:14px"><i class="ti ti-x"></i></button>
+        <div class="ex-block-name" style="flex:1">${ex.name}${ex.muscle?` <span style="background:var(--surface-2);color:var(--text-2);font-size:10px;font-weight:700;padding:2px 7px;border-radius:var(--r-pill);margin-left:6px">${ex.muscle}</span>`:''}</div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <button class="move-btn" onclick="moveLogEx(${ei},-1)" title="Flytta upp" ${ei===0?'disabled style="opacity:0.3"':''}><i class="ti ti-chevron-up"></i></button>
+          <button class="move-btn" onclick="moveLogEx(${ei},1)" title="Flytta ner" ${ei===loggedExs.length-1?'disabled style="opacity:0.3"':''}><i class="ti ti-chevron-down"></i></button>
+        </div>
+        <button onclick="rmLogEx(${ei})" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:14px;padding:4px"><i class="ti ti-x"></i></button>
       </div>
       <div class="set-labels"><span>Set</span><span>${ex.cat==='cardio'?'Dist (km)':'Vikt (kg)'}</span><span>${ex.cat==='cardio'?'Tid (min)':'Reps'}</span><span></span></div>
       ${ex.sets.map((s,si)=>{
@@ -2859,6 +2866,12 @@ function stepS(ei,si,k,delta){
   renderLogExs();
 }
 function togS(ei,si){loggedExs[ei].sets[si].done=!loggedExs[ei].sets[si].done;renderLogExs();}
+function moveLogEx(ei,dir){
+  const newIdx=ei+dir;
+  if(newIdx<0||newIdx>=loggedExs.length) return;
+  [loggedExs[ei],loggedExs[newIdx]]=[loggedExs[newIdx],loggedExs[ei]];
+  renderLogExs();
+}
 function addS(ei){const last=loggedExs[ei].sets.at(-1)||{w:0,r:0};loggedExs[ei].sets.push({...last,done:false});renderLogExs();}
 function rmLogEx(ei){loggedExs.splice(ei,1);renderLogExs();}
 function setFeel(n,btn){feelRating=n;document.querySelectorAll('.feel-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');}
@@ -2908,7 +2921,7 @@ function renderLogExModal(){
     const firstTag=ex.formTags?.[0];
     const cat=firstTag==='kondition'?'cardio':firstTag==='egenvikt'?'bodyweight':firstTag==='rorlighet'?'mobility':'strength';
     return `
-    <div class="ex-row" onclick="addExToLog('${ex.name.replace(/'/g,"\\'")}','${cat}',${ex.defaultSets||3},${ex.defaultReps||10})" style="cursor:pointer">
+    <div class="ex-row" onclick="addExToLog('${ex.name.replace(/'/g,"\\'")}','${cat}',${ex.defaultSets||3},${ex.defaultReps||10},'${(ex.muscle||'').replace(/'/g,"\\'")}')" style="cursor:pointer">
       <div class="ex-row-thumb" style="background:${catGrad[cat]||catGrad.strength}"><i class="ti ${exIconMap[cat]||'ti-barbell'}"></i></div>
       <div class="ex-row-info"><div class="ex-row-name">${ex.name}</div><div class="ex-row-meta">${ex.muscle}</div></div>
       ${ex.fav?'<i class="ti ti-star-filled" style="color:#f5a800;font-size:14px;margin-right:2px"></i>':''}
@@ -2916,7 +2929,7 @@ function renderLogExModal(){
     </div>`;
   }).join('')||'<div style="text-align:center;color:var(--text-3);font-size:13px;padding:16px">Inga träffar</div>';
 }
-function addExToLog(name,cat,sets,reps){loggedExs.push({name,cat,sets:Array(sets).fill(null).map(()=>({w:0,r:reps,done:false}))});closeModal('m-log-ex');renderLogExs();}
+function addExToLog(name,cat,sets,reps,muscle){loggedExs.push({name,muscle:muscle||'',cat,sets:Array(sets).fill(null).map(()=>({w:0,r:reps,done:false}))});closeModal('m-log-ex');renderLogExs();}
 
 /* ========== STATISTIK-HJÄLPFUNKTIONER ========== */
 function getDaysAgo(n){
