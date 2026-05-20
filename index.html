@@ -696,7 +696,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
           </div>
           <input type="file" id="imp-file" accept=".pdf,.xlsx,.xls,.csv,.txt,image/*,text/*" onchange="onImportFileChange(this)" style="display:none">
           <button type="button" class="btn-ghost" onclick="pasteFromClipboard()" style="width:100%;margin-top:8px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px"><i class="ti ti-clipboard"></i> Klistra in från urklipp (fil eller text)</button>
-          <div style="font-size:10px;color:var(--text-3);margin-top:4px;text-align:center;line-height:1.4">På mobilen funkar bra för bilagor från Mail. På desktop: använd hellre drag-and-drop för PDF-filer.</div>
+          <div style="font-size:10px;color:var(--text-3);margin-top:4px;text-align:center;line-height:1.4">Funkar bäst för text och bilder (screenshots). För PDF: använd dropzone ovanför, eller spara först i Filer (iOS) / Filhanteraren (Android).</div>
           <div id="imp-file-status" style="font-size:11px;color:var(--text-2);margin-top:6px;min-height:14px;text-align:center"></div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:11px;font-weight:700">
@@ -1368,9 +1368,19 @@ async function pasteFromClipboard(){
           }
         }
       }
-      // Inget vi kan använda — ge ett tydligt felmeddelande med tips
-      const typesStr=allTypes.length?` (urklippet innehöll: ${allTypes.join(', ')})`:'';
-      throw new Error(`Filer kopierade från Utforskaren/Finder kan webbläsaren inte läsa av säkerhetsskäl${typesStr}. Använd dra-och-släpp eller klicka "Klicka, dra eller klistra in fil" istället.`);
+      // Inget vi kan använda — ge ett tydligt, platform-specifikt felmeddelande
+      const isIos=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+      const isAndroid=/Android/.test(navigator.userAgent);
+      const typesStr=allTypes.length?` (urklippet innehöll: ${allTypes.join(', ')})`:' (urklippet är tomt eller innehöll bara typer som Safari inte tillåter webbsidor att läsa)';
+      let msg;
+      if(isIos){
+        msg=`Safari på iPhone tillåter inte att webbsidor läser PDF:er från urklipp${typesStr}. Gör så här istället: Mail → tryck PDF-bilagan → "Spara i Filer". Sen tryck "Klicka, dra eller klistra in fil" här ovanför och välj från Filer.`;
+      }else if(isAndroid){
+        msg=`Webbläsaren tillåter inte att läsa filen från urklippet${typesStr}. Gör så här: spara PDF:en i Filhanteraren först, tryck sen "Klicka, dra eller klistra in fil" här ovanför och välj filen.`;
+      }else{
+        msg=`Filer kopierade från Utforskaren/Finder kan webbläsaren inte läsa av säkerhetsskäl${typesStr}. Använd dra-och-släpp eller klicka "Klicka, dra eller klistra in fil" istället.`;
+      }
+      throw new Error(msg);
     }
     // Fallback: bara text via readText() (äldre browsers)
     if(navigator.clipboard&&navigator.clipboard.readText){
