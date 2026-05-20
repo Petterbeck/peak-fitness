@@ -695,6 +695,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
             <div style="font-size:11px;color:var(--text-3)">PDF, JPG/PNG, Excel, CSV, text · max 3 MB</div>
           </div>
           <input type="file" id="imp-file" accept=".pdf,.xlsx,.xls,.csv,.txt,image/*,text/*" onchange="onImportFileChange(this)" style="display:none">
+          <button type="button" class="btn-ghost" onclick="pasteFromClipboard()" style="width:100%;margin-top:8px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px"><i class="ti ti-clipboard"></i> Klistra in från urklipp (fil eller text)</button>
           <div id="imp-file-status" style="font-size:11px;color:var(--text-2);margin-top:6px;min-height:14px;text-align:center"></div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:11px;font-weight:700">
@@ -1314,6 +1315,68 @@ async function processImportFile(file){
   dt.items.add(file);
   document.getElementById('imp-file').files=dt.files;
   await onImportFileChange(document.getElementById('imp-file'));
+}
+
+// Läs urklipp via Clipboard API — fungerar på mobilen där Ctrl+V inte finns.
+// Hanterar både filer (PDF/bild) och ren text. Kräver user gesture (knapp-klick).
+async function pasteFromClipboard(){
+  const status=document.getElementById('imp-file-status');
+  status.style.color='var(--text-2)';
+  status.textContent='⏳ Läser urklipp…';
+  try{
+    // Modern: navigator.clipboard.read() ger ClipboardItems med både filer och text
+    if(navigator.clipboard&&navigator.clipboard.read){
+      let items;
+      try{
+        items=await navigator.clipboard.read();
+      }catch(e){
+        if(e.name==='NotAllowedError') throw new Error('Behörighet att läsa urklipp nekades. Försök igen och godkänn när webbläsaren frågar.');
+        throw e;
+      }
+      if(!items||!items.length) throw new Error('Urklipp är tomt');
+      // 1) Leta efter fil-typer vi stödjer (PDF eller bild)
+      for(const item of items){
+        for(const type of item.types){
+          if(type==='application/pdf'||type.startsWith('image/')){
+            const blob=await item.getType(type);
+            const ext=type==='application/pdf'?'pdf':(type.split('/')[1]||'png').split('+')[0];
+            const file=new File([blob],`inklistrad.${ext}`,{type});
+            await processImportFile(file);
+            return;
+          }
+        }
+      }
+      // 2) Ingen fil — försök text
+      for(const item of items){
+        if(item.types.includes('text/plain')){
+          const blob=await item.getType('text/plain');
+          const text=(await blob.text()).trim();
+          if(text){
+            document.getElementById('imp-text').value=text;
+            importAttachment=null;
+            status.style.color='var(--accent-3)';
+            status.textContent=`✓ Text inklistrad (${text.length} tecken)`;
+            return;
+          }
+        }
+      }
+      throw new Error('Urklippet innehåller inget stött format (PDF, bild eller text)');
+    }
+    // Fallback: bara text via readText() (äldre browsers)
+    if(navigator.clipboard&&navigator.clipboard.readText){
+      const text=(await navigator.clipboard.readText()).trim();
+      if(!text) throw new Error('Urklipp är tomt');
+      document.getElementById('imp-text').value=text;
+      importAttachment=null;
+      status.style.color='var(--accent-3)';
+      status.textContent=`✓ Text inklistrad (${text.length} tecken)`;
+      return;
+    }
+    throw new Error('Din webbläsare stödjer inte att läsa urklipp. Använd "klicka för att ladda upp" istället.');
+  }catch(e){
+    status.style.color='#e8200a';
+    status.textContent='❌ '+e.message;
+  }
 }
 
 async function onImportFileChange(input){
