@@ -324,13 +324,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="hero" id="home-hero">
     <div class="hero-z" id="home-hero-content"></div>
   </div>
-  <div class="section-head"><div class="section-title">Mina framsteg</div><button class="section-link" onclick="navigate('page-stats')">Detaljer →</button></div>
-  <div class="stats-grid">
-    <div class="stat-card"><div class="ic" style="background:var(--g1)"><i class="ti ti-bolt"></i></div><div class="sv">3<span>/5</span></div><div class="sl">Pass</div><div class="st"><i class="ti ti-trending-up"></i>+1 vs förra v</div></div>
-    <div class="stat-card"><div class="ic" style="background:var(--g2)"><i class="ti ti-barbell"></i></div><div class="sv">12,4<span>t</span></div><div class="sl">Volym</div><div class="st"><i class="ti ti-trending-up"></i>+8%</div></div>
-    <div class="stat-card"><div class="ic" style="background:var(--g3)"><i class="ti ti-run"></i></div><div class="sv">8,4<span>km</span></div><div class="sl">Löpning</div><div class="st"><i class="ti ti-trending-up"></i>+2,1 km</div></div>
-    <div class="stat-card"><div class="ic" style="background:linear-gradient(135deg,#e8200a,#5b52f0)"><i class="ti ti-flame"></i></div><div class="sv">1840<span>kcal</span></div><div class="sl">Förbränt</div><div class="st"><i class="ti ti-trending-up"></i>+12%</div></div>
-  </div>
+  <div class="section-head"><div class="section-title">Mina framsteg</div><button class="section-link" onclick="navigate('page-history')">Detaljer →</button></div>
+  <div class="stats-grid" id="home-stats-grid"></div>
   <div class="section-head"><div class="section-title">Aktiva mål</div><button class="section-link" onclick="navigate('page-profile')">Alla →</button></div>
   <div id="home-goals" style="display:flex;flex-direction:column;gap:8px"></div>
   <div class="section-head"><div class="section-title">Coach</div></div>
@@ -1168,7 +1163,7 @@ async function loadFromCloud(silent){
     }));
     saveState();
     // Refresh alla vyer
-    renderHomeHero();renderCalendar();renderWeekSchedule();renderPassList();renderExercises();renderGoals();
+    renderHomeHero();renderHomeStats();renderStreak();renderCalendar();renderWeekSchedule();renderPassList();renderExercises();renderGoals();
     if(!silent) setSyncStatus('✓ Hämtat från molnet '+new Date().toLocaleTimeString('sv-SE'),'ok');
     return true;
   }catch(e){
@@ -1453,7 +1448,7 @@ function navigate(id){
   const m={'page-home':'nav-home','page-plan':'nav-plan','page-log':'nav-home','page-history':'nav-history','page-coach':'nav-coach','page-profile':'nav-home','page-stats':'nav-home'};
   if(m[id]) document.getElementById(m[id])?.classList.add('active');
   if(id==='page-stats') setTimeout(drawCharts,50);
-  if(id==='page-home') renderHomeHero();
+  if(id==='page-home'){renderHomeHero();renderHomeStats();renderStreak();}
   if(id==='page-plan'){renderWeekSchedule();renderCalendar();}
   if(id==='page-log') renderLogPassList();
   if(id==='page-history') renderHistory();
@@ -2335,6 +2330,9 @@ function finishLog(){
     }))
   });
   saveState();
+  // Uppdatera stats + streak baserat på nya passet
+  renderHomeStats();
+  renderStreak();
   clearInterval(timerInterval);
   document.getElementById('log-active').style.display='none';
   document.getElementById('log-select').style.display='flex';
@@ -2369,6 +2367,122 @@ function renderLogExModal(){
   }).join('')||'<div style="text-align:center;color:var(--text-3);font-size:13px;padding:16px">Inga träffar</div>';
 }
 function addExToLog(name,cat,sets,reps){loggedExs.push({name,cat,sets:Array(sets).fill(null).map(()=>({w:0,r:reps,done:false}))});closeModal('m-log-ex');renderLogExs();}
+
+/* ========== STATISTIK-HJÄLPFUNKTIONER ========== */
+function getDaysAgo(n){
+  const d=new Date();
+  d.setDate(d.getDate()-n);
+  d.setHours(0,0,0,0);
+  return d;
+}
+
+function getWorkoutsInPeriod(startDate,endDate){
+  return workoutHistory.filter(w=>{
+    if(!w.date) return false;
+    const d=new Date(w.date);
+    return d>=startDate&&d<endDate;
+  });
+}
+
+function calcVolume(workouts){
+  let total=0;
+  workouts.forEach(w=>{
+    (w.exercises||[]).forEach(ex=>{
+      if(ex.cat==='cardio') return;
+      (ex.sets||[]).forEach(s=>{
+        if(s.done) total+=(s.w||0)*(s.r||0);
+      });
+    });
+  });
+  return total;
+}
+
+function calcDistance(workouts){
+  let total=0;
+  workouts.forEach(w=>{
+    (w.exercises||[]).forEach(ex=>{
+      if(ex.cat!=='cardio') return;
+      (ex.sets||[]).forEach(s=>{
+        if(s.done) total+=(s.w||0);
+      });
+    });
+  });
+  return total;
+}
+
+function calcAvgFeel(workouts){
+  const feels=workouts.map(w=>w.feel).filter(f=>f);
+  if(!feels.length) return null;
+  return feels.reduce((a,b)=>a+b,0)/feels.length;
+}
+
+function calcStreak(){
+  const today=new Date();today.setHours(0,0,0,0);
+  const dateSet=new Set(workoutHistory.filter(w=>w.date).map(w=>{
+    const d=new Date(w.date);d.setHours(0,0,0,0);return d.getTime();
+  }));
+  let streak=0;
+  let check=new Date(today);
+  // Om inget pass idag, börja räkna från igår
+  if(!dateSet.has(check.getTime())) check.setDate(check.getDate()-1);
+  while(dateSet.has(check.getTime())){
+    streak++;
+    check.setDate(check.getDate()-1);
+  }
+  return streak;
+}
+
+function renderHomeStats(){
+  const el=document.getElementById('home-stats-grid');
+  if(!el) return;
+  const now=new Date();
+  const week1=getDaysAgo(7);
+  const week2=getDaysAgo(14);
+  const days30=getDaysAgo(30);
+  const thisWeek=getWorkoutsInPeriod(week1,now);
+  const prevWeek=getWorkoutsInPeriod(week2,week1);
+  const last30=getWorkoutsInPeriod(days30,now);
+  const passDiff=thisWeek.length-prevWeek.length;
+  const volume=calcVolume(last30);
+  const volumeKt=volume>=1000?(volume/1000).toFixed(1).replace('.',','):Math.round(volume);
+  const volumeUnit=volume>=1000?'t':'kg';
+  const distance=calcDistance(last30);
+  const distanceStr=distance>0?distance.toFixed(1).replace('.',','):'0';
+  const avgFeel=calcAvgFeel(last30);
+  const feelEmoji=avgFeel?['😩','😐','🙂','💪','🔥'][Math.max(0,Math.min(4,Math.round(avgFeel)-1))]:'';
+  const passTrendIcon=passDiff>=0?'ti-trending-up':'ti-trending-down';
+  const passTrendColor=passDiff>=0?'var(--accent-3)':'#e8200a';
+  el.innerHTML=`
+    <div class="stat-card"><div class="ic" style="background:var(--g1)"><i class="ti ti-bolt"></i></div>
+      <div class="sv">${thisWeek.length}<span>/v</span></div>
+      <div class="sl">Pass denna v</div>
+      <div class="st" style="color:${passTrendColor}"><i class="ti ${passTrendIcon}"></i>${passDiff>=0?'+':''}${passDiff} vs förra v</div>
+    </div>
+    <div class="stat-card"><div class="ic" style="background:var(--g2)"><i class="ti ti-barbell"></i></div>
+      <div class="sv">${volumeKt}<span>${volumeUnit}</span></div>
+      <div class="sl">Volym 30 dgr</div>
+      <div class="st" style="color:var(--text-3)">${last30.length} pass</div>
+    </div>
+    <div class="stat-card"><div class="ic" style="background:var(--g3)"><i class="ti ti-run"></i></div>
+      <div class="sv">${distanceStr}<span>km</span></div>
+      <div class="sl">Distans 30 dgr</div>
+      <div class="st" style="color:var(--text-3)">${distance>0?'kondition':'inga löppass'}</div>
+    </div>
+    <div class="stat-card"><div class="ic" style="background:linear-gradient(135deg,#e8200a,#5b52f0)"><i class="ti ti-mood-smile"></i></div>
+      <div class="sv">${avgFeel?avgFeel.toFixed(1).replace('.',','):'–'}<span>${feelEmoji}</span></div>
+      <div class="sl">Snittkänsla 30 dgr</div>
+      <div class="st" style="color:var(--text-3)">${last30.filter(w=>w.feel).length} skattningar</div>
+    </div>`;
+}
+
+function renderStreak(){
+  const el=document.querySelector('.streak');
+  if(!el) return;
+  const streak=calcStreak();
+  el.innerHTML=`<i class="ti ti-flame" style="font-size:12px"></i> ${streak}`;
+  el.title=streak===0?'Inga pass loggade än':`Tränat ${streak} dag${streak===1?'':'ar'} i rad (streak)`;
+  el.style.opacity=streak===0?'0.5':'1';
+}
 
 /* ========== HOME HERO ========== */
 function renderHomeHero(){
@@ -3066,6 +3180,8 @@ populateExModal();
 updateThemeUI();
 renderGoals();
 renderHomeHero();
+renderHomeStats();
+renderStreak();
 renderCalendar();
 renderWeekSchedule();
 checkAuth().then(ok=>{if(ok){renderProfileUser();loadFromCloud(true);}});
