@@ -14,6 +14,14 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+  // Konfigurera PDF.js-worker
+  if (window.pdfjsLib) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+  }
+</script>
 <script src="supabase-config.js"></script>
 <style>
 :root {
@@ -673,8 +681,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <!-- VY 1: Input -->
     <div id="imp-view-input">
       <div class="modal-title">Importera träningsprogram</div>
-      <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Klistra in ett färdigt program (t.ex. från en tränare, klubb eller PDF). AI tolkar och föreslår pass + övningar — du verifierar innan import.</div>
+      <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Ladda upp en fil eller klistra in text. AI tolkar och föreslår pass + övningar — du verifierar innan import.</div>
       <div style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <label class="field-label">Ladda upp fil (PDF / Excel / CSV / text)</label>
+          <label for="imp-file" class="btn-ghost" style="width:100%;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:700">
+            <i class="ti ti-upload"></i> Välj fil
+          </label>
+          <input type="file" id="imp-file" accept=".pdf,.xlsx,.xls,.csv,.txt,text/*" onchange="onImportFileChange(this)" style="display:none">
+          <div id="imp-file-status" style="font-size:11px;color:var(--text-2);margin-top:6px;min-height:14px;text-align:center"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:11px;font-weight:700">
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+          <span>ELLER KLISTRA IN</span>
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+        </div>
         <div>
           <label class="field-label">Programtext</label>
           <textarea class="field-input" id="imp-text" rows="8" placeholder="T.ex.:&#10;&#10;LSK Slalom-program&#10;&#10;PASS 1 - Styrka A&#10;- Knäböj 5x5 80 kg&#10;- Marklyft 3x5 100 kg&#10;- Bulgarian split squat 3x10&#10;&#10;PASS 2 - Intervaller&#10;- 8x400m i Z4 med 90s vila" style="resize:vertical;min-height:140px;font-family:inherit"></textarea>
@@ -1225,8 +1246,79 @@ function openImportProgram(){
   document.getElementById('imp-text').value='';
   document.getElementById('imp-prefix').value='';
   document.getElementById('imp-tag').value='';
+  document.getElementById('imp-file-status').textContent='';
+  document.getElementById('imp-file').value='';
   showImpView('input');
   openModal('m-import-program');
+}
+
+async function onImportFileChange(input){
+  const file=input.files?.[0];
+  const status=document.getElementById('imp-file-status');
+  if(!file) return;
+  const name=file.name;
+  const sizeKb=(file.size/1024).toFixed(1);
+  status.style.color='var(--text-2)';
+  status.textContent=`⏳ Läser ${name} (${sizeKb} KB)…`;
+  try{
+    const ext=name.split('.').pop().toLowerCase();
+    let text='';
+    if(ext==='pdf'){
+      text=await extractPdfText(file);
+    }else if(ext==='xlsx'||ext==='xls'||ext==='csv'){
+      text=await extractSpreadsheetText(file);
+    }else if(ext==='txt'||file.type.startsWith('text/')){
+      text=await file.text();
+    }else{
+      throw new Error('Filtyp som stöds: PDF, Excel (.xlsx/.xls), CSV, eller text');
+    }
+    text=text.trim();
+    if(!text){
+      throw new Error('Filen verkar tom eller skannad (ingen text hittades). Klistra in manuellt istället.');
+    }
+    document.getElementById('imp-text').value=text;
+    const charCount=text.length;
+    status.style.color='var(--accent-3)';
+    status.textContent=`✓ ${name} läst — ${charCount} tecken extraherade. Granska i textrutan och tryck "Analysera".`;
+  }catch(e){
+    status.style.color='#e8200a';
+    status.textContent=`❌ ${e.message}`;
+  }
+}
+
+async function extractPdfText(file){
+  if(!window.pdfjsLib) throw new Error('PDF-bibliotek inte laddat — ladda om sidan');
+  const arrayBuffer=await file.arrayBuffer();
+  const pdf=await window.pdfjsLib.getDocument({data:arrayBuffer}).promise;
+  let text='';
+  for(let i=1;i<=pdf.numPages;i++){
+    const page=await pdf.getPage(i);
+    const content=await page.getTextContent();
+    // Försök behålla layout med radbrytningar
+    let lastY=null;
+    content.items.forEach(it=>{
+      const y=it.transform?.[5];
+      if(lastY!==null&&Math.abs(y-lastY)>2) text+='\n';
+      text+=it.str+' ';
+      lastY=y;
+    });
+    text+='\n\n';
+  }
+  return text;
+}
+
+async function extractSpreadsheetText(file){
+  if(!window.XLSX) throw new Error('Excel-bibliotek inte laddat — ladda om sidan');
+  const arrayBuffer=await file.arrayBuffer();
+  const workbook=window.XLSX.read(arrayBuffer,{type:'array'});
+  let text='';
+  workbook.SheetNames.forEach(sheetName=>{
+    const sheet=workbook.Sheets[sheetName];
+    const csv=window.XLSX.utils.sheet_to_csv(sheet);
+    if(workbook.SheetNames.length>1) text+=`=== ${sheetName} ===\n`;
+    text+=csv+'\n\n';
+  });
+  return text;
 }
 
 function showImpView(view){
