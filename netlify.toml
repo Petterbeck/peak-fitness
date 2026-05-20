@@ -1,0 +1,15 @@
+# Peak Fitness — Netlify-konfiguration
+
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Snyggare URL: /api/claude → /.netlify/functions/claude
+[[redirects]]
+  from = "/api/claude"
+  to = "/.netlify/functions/claude"
+  status = 200
+  force = true

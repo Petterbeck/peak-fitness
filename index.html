@@ -605,6 +605,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="sync-status" style="font-size:11px;color:var(--text-2);margin-top:8px;min-height:14px;text-align:center"></div>
     <div id="sync-last" style="font-size:10px;color:var(--text-3);margin-top:2px;text-align:center"></div>
   </div>
+  <div class="card" style="margin-top:4px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <i class="ti ti-sparkles" style="font-size:18px;color:var(--accent-4)"></i>
+      <div style="font-size:14px;font-weight:700">AI-coach (test)</div>
+    </div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:10px">Verifiera att Claude API-backend fungerar. Skickar en testfråga till Claude.</div>
+    <button class="btn-sm btn-acc" onclick="testClaudeApi()" style="width:100%"><i class="ti ti-sparkles"></i> Testa Claude API</button>
+    <div id="claude-test-status" style="font-size:12px;color:var(--text-2);margin-top:10px;line-height:1.5;min-height:14px"></div>
+  </div>
   <div class="section-head"><div class="section-title">Mål &amp; delmål</div></div>
   <div id="goals-list" style="display:flex;flex-direction:column;gap:7px"></div>
   <button class="btn-ghost" onclick="openNewGoal()"><i class="ti ti-target"></i> Nytt mål</button>
@@ -1164,6 +1173,56 @@ function renderProfileInfo(){
   if(levelEl) levelEl.textContent=levelMap[userProfile.level||'beginner']||'Nybörjare';
   const passEl=document.getElementById('profile-passcount');
   if(passEl) passEl.textContent=`${workoutHistory.length} pass`;
+}
+
+/* ========== CLAUDE API TEST ========== */
+async function testClaudeApi(){
+  const el=document.getElementById('claude-test-status');
+  if(!el) return;
+  el.style.color='var(--text-2)';
+  el.textContent='⏳ Anropar Claude API...';
+  try{
+    const t0=Date.now();
+    const {text,usage}=await callClaude('Säg hej till mig på svenska och bekräfta att du är AI-coachen för Peak Fitness. Håll svaret kort (1-2 meningar).');
+    const ms=Date.now()-t0;
+    el.style.color='var(--accent-3)';
+    el.innerHTML=`<div style="font-weight:700;margin-bottom:4px">✅ Funkar! (${ms} ms)</div><div style="background:var(--surface-2);border-radius:var(--r-sm);padding:9px 11px;font-size:12px;color:var(--text-1);line-height:1.5;font-style:italic">"${text.replace(/</g,'&lt;')}"</div><div style="font-size:10px;color:var(--text-3);margin-top:6px">Tokens: ${usage?.input_tokens||'–'} in, ${usage?.output_tokens||'–'} ut</div>`;
+  }catch(e){
+    el.style.color='#e8200a';
+    el.innerHTML=`<div style="font-weight:700;margin-bottom:4px">❌ Fel</div><div style="background:#fff0eb;border-radius:var(--r-sm);padding:9px 11px;font-size:12px;color:#e8200a">${e.message}</div>`;
+  }
+}
+
+/* ========== CLAUDE API ========== */
+// Helper för att anropa Claude via vår Netlify Function.
+// Ex: const {text} = await callClaude('Hej!');
+// Eller: const {text} = await callClaude([{role:'user',content:'Hej!'}], {system:'...', max_tokens:512});
+async function callClaude(input,options={}){
+  if(!supa||!currentUser) throw new Error('Du måste vara inloggad för att använda AI-coachen');
+  const {data:{session}}=await supa.auth.getSession();
+  if(!session) throw new Error('Ingen aktiv session');
+  const messages=typeof input==='string'?[{role:'user',content:input}]:input;
+  const system=options.system||'Du är en hjälpsam AI-coach för en svensk träningsapp som heter Peak Fitness. Svara alltid på svenska. Var koncis men vänlig. Använd emojis sparsamt.';
+  const res=await fetch('/api/claude',{
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'Authorization':`Bearer ${session.access_token}`
+    },
+    body:JSON.stringify({
+      messages,system,
+      model:options.model||'claude-sonnet-4-5',
+      max_tokens:options.max_tokens||1024
+    })
+  });
+  if(!res.ok){
+    let err='HTTP '+res.status;
+    try{const j=await res.json();err=j.error||JSON.stringify(j);}catch(_){}
+    throw new Error(err);
+  }
+  const data=await res.json();
+  const text=data.content?.[0]?.text||'';
+  return {text,usage:data.usage,raw:data};
 }
 
 /* ========== SUPABASE SYNC ========== */
