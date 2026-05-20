@@ -696,6 +696,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
           </div>
           <input type="file" id="imp-file" accept=".pdf,.xlsx,.xls,.csv,.txt,image/*,text/*" onchange="onImportFileChange(this)" style="display:none">
           <button type="button" class="btn-ghost" onclick="pasteFromClipboard()" style="width:100%;margin-top:8px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px"><i class="ti ti-clipboard"></i> Klistra in från urklipp (fil eller text)</button>
+          <div style="font-size:10px;color:var(--text-3);margin-top:4px;text-align:center;line-height:1.4">På mobilen funkar bra för bilagor från Mail. På desktop: använd hellre drag-and-drop för PDF-filer.</div>
           <div id="imp-file-status" style="font-size:11px;color:var(--text-2);margin-top:6px;min-height:14px;text-align:center"></div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:11px;font-weight:700">
@@ -1334,13 +1335,20 @@ async function pasteFromClipboard(){
         throw e;
       }
       if(!items||!items.length) throw new Error('Urklipp är tomt');
-      // 1) Leta efter fil-typer vi stödjer (PDF eller bild)
+      // Samla alla typer för debugging + bättre felmeddelande
+      const allTypes=[];
+      items.forEach(it=>it.types.forEach(t=>allTypes.push(t)));
+      console.log('Clipboard items:',allTypes);
+      // 1) Leta efter fil-typer vi stödjer (PDF, bild) — var lenient med matchning
       for(const item of items){
         for(const type of item.types){
-          if(type==='application/pdf'||type.startsWith('image/')){
+          const lower=type.toLowerCase();
+          if(lower==='application/pdf'||lower.includes('pdf')||lower.startsWith('image/')){
             const blob=await item.getType(type);
-            const ext=type==='application/pdf'?'pdf':(type.split('/')[1]||'png').split('+')[0];
-            const file=new File([blob],`inklistrad.${ext}`,{type});
+            const isPdf=lower.includes('pdf');
+            const ext=isPdf?'pdf':((type.split('/')[1]||'png').split('+')[0]);
+            const mime=isPdf?'application/pdf':type;
+            const file=new File([blob],`inklistrad.${ext}`,{type:mime});
             await processImportFile(file);
             return;
           }
@@ -1360,7 +1368,9 @@ async function pasteFromClipboard(){
           }
         }
       }
-      throw new Error('Urklippet innehåller inget stött format (PDF, bild eller text)');
+      // Inget vi kan använda — ge ett tydligt felmeddelande med tips
+      const typesStr=allTypes.length?` (urklippet innehöll: ${allTypes.join(', ')})`:'';
+      throw new Error(`Filer kopierade från Utforskaren/Finder kan webbläsaren inte läsa av säkerhetsskäl${typesStr}. Använd dra-och-släpp eller klicka "Klicka, dra eller klistra in fil" istället.`);
     }
     // Fallback: bara text via readText() (äldre browsers)
     if(navigator.clipboard&&navigator.clipboard.readText){
