@@ -1395,7 +1395,13 @@ async function analyzeImport(){
   showImpView('loading');
   const systemPrompt=`Du är expert på att tolka träningsprogram. Användaren har klistrat in ett program och du ska strukturera det till JSON för en träningsapp.
 
-Returnera ENBART en JSON-array (inga kommentarer, ingen markdown, ingen text utanför JSON). Format:
+KRITISKT - JSON-format:
+- Returnera ENBART giltig JSON, inget annat. Ingen markdown, inga code fences, inga kommentarer, ingen text före/efter.
+- Använd alltid dubbla citattecken (") runt nycklar och strängvärden — aldrig single quotes eller smart quotes.
+- INGA trailing commas (kommatecken före } eller ]).
+- Om programmet är väldigt långt: prioritera att avsluta JSON-objektet KORREKT framför att ta med alla pass. Det är bättre att returnera 5 kompletta pass än 10 avhuggna.
+
+Format:
 
 {
   "passes": [
@@ -1429,13 +1435,8 @@ Viktigt:
 - Översätt övningar till svenska om de är på annat språk
 - Om en övning är "8x400m" → sets=8, distance=0.4, time=null, primaryForm=running, muscle=Kondition`;
   try{
-    const result=await callClaude(text,{system:systemPrompt,max_tokens:4096});
-    let cleaned=result.text.trim();
-    // Hantera om Claude wrappar i markdown code block
-    if(cleaned.startsWith('```')){
-      cleaned=cleaned.replace(/^```(?:json)?\s*\n?/,'').replace(/\n?```\s*$/,'');
-    }
-    const data=JSON.parse(cleaned);
+    const result=await callClaude(text,{system:systemPrompt,max_tokens:8192});
+    const data=parseClaudeJson(result.text);
     if(!data.passes||!Array.isArray(data.passes)||!data.passes.length){
       throw new Error('AI:n returnerade inga pass — kontrollera programtexten och försök igen');
     }
@@ -1444,8 +1445,101 @@ Viktigt:
     showImpView('preview');
   }catch(e){
     showImpView('input');
-    alert('Fel vid analys: '+e.message);
+    console.error('Import-parse fel:',e);
+    alert('Fel vid analys: '+e.message+'\n\nTips: Försök igen — AI:n kan ge olika resultat. Om felet upprepas, dela upp programmet i mindre delar.');
   }
+}
+
+// Robust JSON-parser för Claudes svar — hanterar markdown, trailing commas, smart quotes, prefix-text och avhuggna svar
+function parseClaudeJson(raw){
+  if(!raw||typeof raw!=='string') throw new Error('Tomt svar från AI');
+  let s=raw.trim();
+  // 1. Strippa markdown code fences om de finns
+  if(s.startsWith('```')){
+    s=s.replace(/^```(?:json)?\s*\n?/i,'').replace(/\n?```\s*$/,'');
+  }
+  // 2. Hitta första { och sista } för att klippa bort eventuell prefix/suffix-text
+  const firstBrace=s.indexOf('{');
+  const lastBrace=s.lastIndexOf('}');
+  if(firstBrace>=0&&lastBrace>firstBrace){
+    s=s.slice(firstBrace,lastBrace+1);
+  }
+  // 3. Ersätt smart quotes (förekommer ofta i text extraherad från PDF)
+  s=s.replace(/[“”„‟]/g,'"').replace(/[‘’‚‛]/g,"'");
+  // 4. Ta bort // line comments och /* block comments */
+  s=s.replace(/\/\/[^\n\r]*/g,'').replace(/\/\*[\s\S]*?\*\//g,'');
+  // 5. Ta bort trailing commas före } eller ]
+  s=s.replace(/,(\s*[}\]])/g,'$1');
+  // 6. Försök parsa
+  try{
+    return JSON.parse(s);
+  }catch(e){
+    // Om det failar — kolla om svaret kan vara avhugget (saknar matchande }) och försök reparera
+    const repaired=tryRepairTruncatedJson(s);
+    if(repaired){
+      try{
+        const data=JSON.parse(repaired);
+        console.warn('JSON var avhugget — reparerat automatiskt. Granska resultatet noggrant.');
+        return data;
+      }catch(e2){}
+    }
+    // Ge bättre felmeddelande med position-info
+    const m=e.message.match(/position (\d+)/);
+    if(m){
+      const pos=parseInt(m[1]);
+      const ctx=s.slice(Math.max(0,pos-40),Math.min(s.length,pos+40));
+      throw new Error(`JSON kunde inte tolkas (vid position ${pos}). Kontext: …${ctx}…`);
+    }
+    throw e;
+  }
+}
+
+// Försök reparera ett JSON som blev avhugget (oftast pga max_tokens-gräns)
+function tryRepairTruncatedJson(s){
+  // Räkna { och } för att se hur många stängare som saknas
+  let openBraces=0,openBrackets=0,inString=false,escape=false;
+  for(let i=0;i<s.length;i++){
+    const c=s[i];
+    if(escape){escape=false;continue;}
+    if(c==='\\'){escape=true;continue;}
+    if(c==='"')inString=!inString;
+    if(inString)continue;
+    if(c==='{')openBraces++;
+    else if(c==='}')openBraces--;
+    else if(c==='[')openBrackets++;
+    else if(c===']')openBrackets--;
+  }
+  if(openBraces<=0&&openBrackets<=0) return null;
+  // Försök hitta sista kompletta property och klipp där
+  // Strategi: gå baklänges och hitta sista "}, " som följs av "{ — då har vi ett komplett objekt i array
+  let repaired=s;
+  // Om mitt i en string — klipp där
+  if(inString){
+    const lastQuote=repaired.lastIndexOf('"');
+    if(lastQuote>0) repaired=repaired.slice(0,lastQuote);
+  }
+  // Klipp efter sista komplett "}"
+  const lastClose=repaired.lastIndexOf('}');
+  if(lastClose>0){
+    repaired=repaired.slice(0,lastClose+1);
+    // Räkna om
+    openBraces=0;openBrackets=0;inString=false;escape=false;
+    for(let i=0;i<repaired.length;i++){
+      const c=repaired[i];
+      if(escape){escape=false;continue;}
+      if(c==='\\'){escape=true;continue;}
+      if(c==='"')inString=!inString;
+      if(inString)continue;
+      if(c==='{')openBraces++;
+      else if(c==='}')openBraces--;
+      else if(c==='[')openBrackets++;
+      else if(c===']')openBrackets--;
+    }
+  }
+  // Lägg på saknade stängare
+  while(openBrackets-->0) repaired+=']';
+  while(openBraces-->0) repaired+='}';
+  return repaired;
 }
 
 const PRIMARY_TO_FORM_CAT={strength:'strength',bodyweight:'bodyweight',running:'cardio',cycling:'cardio',mobility:'mobility',group:'strength',other:'strength'};
