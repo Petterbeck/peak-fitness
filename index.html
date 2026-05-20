@@ -14,12 +14,12 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/[email protected]/build/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
-  // Konfigurera PDF.js-worker
+  // Konfigurera PDF.js-worker (3.x — legacy build, fungerar med non-module script)
   if (window.pdfjsLib) {
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/[email protected]/build/pdf.worker.min.js';
   }
 </script>
 <script src="supabase-config.js"></script>
@@ -255,6 +255,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .move-btn{width:28px;height:18px;border-radius:5px;background:var(--surface-2);border:1px solid var(--border);color:var(--text-2);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-size:14px;line-height:1}
 .move-btn:hover{background:var(--surface-3);color:var(--text-1)}
 .move-btn:active{background:var(--accent);color:#fff}
+#imp-file-zone:hover{border-color:var(--accent-4);background:rgba(91,82,240,0.04)}
+#imp-file-zone.drag-over{border-color:var(--accent-4);background:rgba(91,82,240,0.1);transform:scale(1.01)}
 .remove-btn{width:36px;height:36px;border-radius:50%;background:#ffe4dc;border:1.5px solid #e8200a;color:#e8200a;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;flex-shrink:0;padding:0;transition:all 0.14s}
 .remove-btn:hover{background:#e8200a;color:#fff}
 .remove-btn i{font-size:18px;line-height:1}
@@ -360,7 +362,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn-primary" onclick="openNewPass()" style="flex:1;min-width:160px"><i class="ti ti-plus"></i> Nytt träningspass</button>
         <button class="btn-ghost" onclick="openImportProgram()" style="flex:1;min-width:140px;font-size:12px;font-weight:700;color:var(--accent-4);border-color:var(--accent-4)"><i class="ti ti-sparkles"></i> Importera (AI)</button>
-        <button class="btn-ghost" onclick="openModal('m-add-form')" style="flex:0 0 auto;padding:0 14px;font-size:12px" title="Ny träningsform"><i class="ti ti-folder-plus"></i></button>
+        <button class="btn-ghost" onclick="openModal('m-add-form')" style="flex:1;min-width:130px;font-size:12px;font-weight:700"><i class="ti ti-folder-plus"></i> Ny träningsform</button>
       </div>
       <input class="search-bar" id="pass-search" placeholder="Sök pass..." oninput="renderPassList()">
       <div>
@@ -685,9 +687,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div style="display:flex;flex-direction:column;gap:12px">
         <div>
           <label class="field-label">Ladda upp fil (PDF / Excel / CSV / text)</label>
-          <label for="imp-file" class="btn-ghost" style="width:100%;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:700">
-            <i class="ti ti-upload"></i> Välj fil
-          </label>
+          <div id="imp-file-zone" onclick="document.getElementById('imp-file').click()" style="border:2px dashed var(--border-md);border-radius:var(--r);padding:18px 12px;text-align:center;cursor:pointer;transition:all 0.18s;background:var(--surface)">
+            <div style="font-size:28px;line-height:1;margin-bottom:6px"><i class="ti ti-upload" style="color:var(--accent-4)"></i></div>
+            <div style="font-size:13px;font-weight:700;margin-bottom:2px">Klicka, dra eller klistra in fil</div>
+            <div style="font-size:11px;color:var(--text-3)">PDF, Excel, CSV, text</div>
+          </div>
           <input type="file" id="imp-file" accept=".pdf,.xlsx,.xls,.csv,.txt,text/*" onchange="onImportFileChange(this)" style="display:none">
           <div id="imp-file-status" style="font-size:11px;color:var(--text-2);margin-top:6px;min-height:14px;text-align:center"></div>
         </div>
@@ -1249,7 +1253,60 @@ function openImportProgram(){
   document.getElementById('imp-file-status').textContent='';
   document.getElementById('imp-file').value='';
   showImpView('input');
+  setupImportDropAndPaste();
   openModal('m-import-program');
+}
+
+let importDropSetup=false;
+function setupImportDropAndPaste(){
+  if(importDropSetup) return;
+  importDropSetup=true;
+  const zone=document.getElementById('imp-file-zone');
+  const modal=document.getElementById('m-import-program');
+  if(!zone||!modal) return;
+  // Drag-and-drop på file-zone
+  zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('drag-over');});
+  zone.addEventListener('dragleave',e=>{e.preventDefault();zone.classList.remove('drag-over');});
+  zone.addEventListener('drop',e=>{
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file=e.dataTransfer?.files?.[0];
+    if(file) processImportFile(file);
+  });
+  // Paste anywhere in modal (typ ctrl+v av en bilaga)
+  modal.addEventListener('paste',async e=>{
+    const items=e.clipboardData?.items;
+    if(!items) return;
+    for(const item of items){
+      if(item.kind==='file'){
+        const file=item.getAsFile();
+        if(file){
+          e.preventDefault();
+          await processImportFile(file);
+          return;
+        }
+      }
+    }
+  });
+  // Globala dragover så browsern inte öppnar filen om man missar zone
+  document.addEventListener('dragover',e=>{
+    if(modal.classList.contains('show')) e.preventDefault();
+  });
+  document.addEventListener('drop',e=>{
+    if(modal.classList.contains('show')&&!zone.contains(e.target)){
+      e.preventDefault();
+      const file=e.dataTransfer?.files?.[0];
+      if(file) processImportFile(file);
+    }
+  });
+}
+
+async function processImportFile(file){
+  // Sätt file på input för konsistens + uppdatera status
+  const dt=new DataTransfer();
+  dt.items.add(file);
+  document.getElementById('imp-file').files=dt.files;
+  await onImportFileChange(document.getElementById('imp-file'));
 }
 
 async function onImportFileChange(input){
