@@ -695,8 +695,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
             <div style="font-size:11px;color:var(--text-3)">PDF, JPG/PNG, Excel, CSV, text · max 3 MB</div>
           </div>
           <input type="file" id="imp-file" accept=".pdf,.xlsx,.xls,.csv,.txt,image/*,text/*" onchange="onImportFileChange(this)" style="display:none">
-          <button type="button" class="btn-ghost" onclick="pasteFromClipboard()" style="width:100%;margin-top:8px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px"><i class="ti ti-clipboard"></i> Klistra in från urklipp (fil eller text)</button>
-          <div style="font-size:10px;color:var(--text-3);margin-top:4px;text-align:center;line-height:1.4">Funkar bäst för text och bilder (screenshots). För PDF: använd dropzone ovanför, eller spara först i Filer (iOS) / Filhanteraren (Android).</div>
+          <button type="button" class="btn-ghost" onclick="pasteFromClipboard()" style="width:100%;margin-top:8px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px"><i class="ti ti-clipboard"></i> Klistra in från urklipp (text/bild)</button>
+          <div style="font-size:10px;color:var(--text-3);margin-top:4px;text-align:center;line-height:1.4">💡 För PDF kopierad från Utforskaren: klicka i textrutan nedan och tryck <b>Ctrl+V</b> (samma trick som i ChatGPT).</div>
           <div id="imp-file-status" style="font-size:11px;color:var(--text-2);margin-top:6px;min-height:14px;text-align:center"></div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:11px;font-weight:700">
@@ -1334,8 +1334,17 @@ function setupImportDropAndPaste(){
     const file=e.dataTransfer?.files?.[0];
     if(file) processImportFile(file);
   });
-  // Paste anywhere in modal (typ ctrl+v av en bilaga)
-  modal.addEventListener('paste',async e=>{
+  // Paste anywhere in modal (Ctrl+V av en fil) — funkar oavsett om man paste:ar i textarea eller någon annanstans i modalen
+  const handlePaste=async e=>{
+    // Snabbväg: clipboardData.files innehåller filer från Utforskaren/Finder paste:ade med Ctrl+V
+    const files=e.clipboardData?.files;
+    if(files&&files.length>0){
+      e.preventDefault();
+      console.log('Paste: hittade fil via clipboardData.files:',files[0].name,files[0].type);
+      await processImportFile(files[0]);
+      return;
+    }
+    // Fallback: items (täcker även bilder paste:ade från webbsidor/screenshots)
     const items=e.clipboardData?.items;
     if(!items) return;
     for(const item of items){
@@ -1343,12 +1352,18 @@ function setupImportDropAndPaste(){
         const file=item.getAsFile();
         if(file){
           e.preventDefault();
+          console.log('Paste: hittade fil via clipboardData.items:',file.name,file.type);
           await processImportFile(file);
           return;
         }
       }
     }
-  });
+    // Inget hittades — låt textarean ta texten som vanligt
+  };
+  modal.addEventListener('paste',handlePaste);
+  // Också direkt på textarea — säkrar att vi fångar Ctrl+V även om bubbling inte når modal-listenern
+  const ta=document.getElementById('imp-text');
+  if(ta) ta.addEventListener('paste',handlePaste);
   // Globala dragover så browsern inte öppnar filen om man missar zone
   document.addEventListener('dragover',e=>{
     if(modal.classList.contains('show')) e.preventDefault();
@@ -1430,7 +1445,7 @@ async function pasteFromClipboard(){
       }else if(isAndroid){
         msg=`Webbläsaren tillåter inte att läsa filen från urklippet${typesStr}. Gör så här: spara PDF:en i Filhanteraren först, tryck sen "Klicka, dra eller klistra in fil" här ovanför och välj filen.`;
       }else{
-        msg=`Filer kopierade från Utforskaren/Finder kan webbläsaren inte läsa av säkerhetsskäl${typesStr}. Använd dra-och-släpp eller klicka "Klicka, dra eller klistra in fil" istället.`;
+        msg=`Den här knappen kan inte läsa filer kopierade från Utforskaren${typesStr}. Prova istället: klicka i textrutan "Programtext" nedan och tryck Ctrl+V — samma trick som funkar i ChatGPT.`;
       }
       throw new Error(msg);
     }
