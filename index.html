@@ -607,7 +607,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
   <div class="section-head"><div class="section-title">Mål &amp; delmål</div></div>
   <div id="goals-list" style="display:flex;flex-direction:column;gap:7px"></div>
-  <button class="btn-ghost">+ Nytt mål</button>
+  <button class="btn-ghost" onclick="openNewGoal()"><i class="ti ti-target"></i> Nytt mål</button>
   <div class="section-head" style="margin-top:4px"><div class="section-title">Tema</div></div>
   <button onclick="toggleTheme()" id="theme-btn" class="card" style="display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;width:100%;border:0.5px solid var(--border);background:var(--surface);color:var(--text-1);font-family:inherit;text-align:left">
     <i class="ti ti-moon" id="theme-icon" style="font-size:20px;color:var(--accent-4)"></i>
@@ -653,6 +653,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div><label class="field-label">Ikon</label><input class="field-input" id="nf-icon" placeholder="🚴" value="💪"></div>
       <div><label class="field-label">Kategori</label><select class="field-select" id="nf-cat"><option value="strength">Styrketräning</option><option value="cardio">Kondition</option><option value="bodyweight">Egen vikt</option><option value="mobility">Rörlighet/Yoga</option></select></div>
       <button class="btn-primary" onclick="addForm()"><i class="ti ti-check"></i> Skapa</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="m-edit-goal" onclick="closeBg(event,'m-edit-goal')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title" id="goal-modal-title">Nytt mål</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div><label class="field-label">Mål-namn</label><input class="field-input" id="goal-f-name" placeholder="T.ex. Bänkpress 100 kg"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><label class="field-label">Nuläge</label><input class="field-input" id="goal-f-current" placeholder="T.ex. 72 kg"></div>
+        <div><label class="field-label">Mål</label><input class="field-input" id="goal-f-target" placeholder="T.ex. 100 kg"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><label class="field-label">Framsteg %</label><input class="field-input" id="goal-f-progress" type="number" min="0" max="100" placeholder="0–100"></div>
+        <div><label class="field-label">Tidsram (veckor)</label><input class="field-input" id="goal-f-weeks" type="number" min="1" placeholder="Valfritt"></div>
+      </div>
+      <div>
+        <label class="field-label">Färg</label>
+        <div class="chip-row" id="goal-f-colors" style="flex-wrap:wrap;gap:6px"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="saveGoal()" style="flex:1"><i class="ti ti-check"></i> Spara</button>
+        <button class="btn-ghost" onclick="deleteGoal()" id="goal-delete-btn" style="flex:0 0 auto;color:#e8200a;border-color:#e8200a;background:transparent;font-weight:700;display:none"><i class="ti ti-trash"></i> Ta bort</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1199,6 +1224,19 @@ async function syncToCloud(silent){
       })));
       if(error) throw error;
     }
+    // Steg 5b: Push user_goals
+    if(userGoals.length){
+      const {error}=await supa.from('user_goals').upsert(userGoals.map(g=>({
+        id:g.id,user_id:uid,
+        name:g.name,
+        current_value:g.current||null,
+        target_value:g.target||null,
+        progress:g.progress||0,
+        color:g.color||'#e8440a',
+        target_weeks:g.targetWeeks||null
+      })));
+      if(error) console.warn('Goals sync failed:',error);
+    }
     // Steg 6: Push workout_history
     if(workoutHistory.length){
       const {error}=await supa.from('workout_history').upsert(workoutHistory.map(w=>({
@@ -1239,14 +1277,27 @@ async function loadFromCloud(silent){
   if(!supa||!currentUser){if(!silent) setSyncStatus('Inte inloggad','err');return false;}
   if(!silent) setSyncStatus('Hämtar från molnet...');
   try{
-    const [tfRes,exRes,ptRes,pwRes,whRes,prRes]=await Promise.all([
+    const [tfRes,exRes,ptRes,pwRes,whRes,prRes,ugRes]=await Promise.all([
       supa.from('training_forms').select('*'),
       supa.from('exercises').select('*'),
       supa.from('pass_types').select('*'),
       supa.from('planned_workouts').select('*'),
       supa.from('workout_history').select('*').order('performed_at',{ascending:false}),
-      supa.from('profiles').select('*').eq('id',currentUser.id).maybeSingle()
+      supa.from('profiles').select('*').eq('id',currentUser.id).maybeSingle(),
+      supa.from('user_goals').select('*')
     ]);
+    // User goals — hämta in om finns
+    if(ugRes&&Array.isArray(ugRes.data)&&ugRes.data.length){
+      userGoals.length=0;
+      ugRes.data.forEach(g=>userGoals.push({
+        id:g.id,name:g.name,
+        current:g.current_value||'',
+        target:g.target_value||'',
+        progress:g.progress||0,
+        color:g.color||'#e8440a',
+        targetWeeks:g.target_weeks||null
+      }));
+    }
     if(tfRes.error) throw tfRes.error;
     // Profil — hämta in om finns
     if(prRes&&prRes.data){
@@ -1347,10 +1398,16 @@ const trainingForms=[
 ];
 
 const userGoals=[
-  {name:'Bänkpress 100 kg',progress:72,current:'72 kg',target:'100 kg',color:'#e8440a'},
-  {name:'5K under 25 min',progress:60,current:'27:12',target:'25:00',color:'#00c896'},
-  {name:'15 chins',progress:50,current:'8 reps',target:'15 reps',color:'#f5a800'},
+  {id:crypto.randomUUID(),name:'Bänkpress 100 kg',progress:72,current:'72 kg',target:'100 kg',color:'#e8440a'},
+  {id:crypto.randomUUID(),name:'5K under 25 min',progress:60,current:'27:12',target:'25:00',color:'#00c896'},
+  {id:crypto.randomUUID(),name:'15 chins',progress:50,current:'8 reps',target:'15 reps',color:'#f5a800'},
 ];
+
+function migrateGoalsAddIds(){
+  let changed=false;
+  userGoals.forEach(g=>{if(!g.id){g.id=crypto.randomUUID();changed=true;}});
+  if(changed) saveState();
+}
 
 /* ========== ÖVNINGSBANK (central) ========== */
 const MUSCLE_TAGS=['Bröst','Rygg','Ben','Axlar','Armar','Bål','Höft','Ryggrad','Kondition','Explosivitet','Rörlighet'];
@@ -2840,10 +2897,88 @@ function askAiForPass(){
 }
 
 /* ========== GOALS ========== */
+const GOAL_COLORS=['#e8440a','#00c896','#f5a800','#5b52f0','#00a8d6','#ec4899'];
+let editingGoalId=null;
+let pendingGoalColor='#e8440a';
+
 function renderGoals(){
-  const html=g=>g.map(x=>{const off=138.2-(x.progress/100)*138.2;return`<div class="goal-card"><div class="goal-ring"><svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="22" fill="none" stroke="var(--surface-2)" stroke-width="5"></circle><circle cx="26" cy="26" r="22" fill="none" stroke="${x.color}" stroke-width="5" stroke-linecap="round" stroke-dasharray="138.2" stroke-dashoffset="${off}"></circle></svg><div class="ring-pct">${x.progress}%</div></div><div class="goal-info"><div class="gn">${x.name}</div><div class="gs">${x.current} → ${x.target}</div></div><i class="ti ti-chevron-right" style="color:var(--text-3);font-size:17px"></i></div>`;}).join('');
-  document.getElementById('home-goals').innerHTML=html(userGoals.slice(0,2));
-  document.getElementById('goals-list').innerHTML=html(userGoals);
+  const html=g=>g.map(x=>{
+    const off=138.2-((x.progress||0)/100)*138.2;
+    return`<div class="goal-card" onclick="openEditGoal('${x.id}')"><div class="goal-ring"><svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="22" fill="none" stroke="var(--surface-2)" stroke-width="5"></circle><circle cx="26" cy="26" r="22" fill="none" stroke="${x.color||'#e8440a'}" stroke-width="5" stroke-linecap="round" stroke-dasharray="138.2" stroke-dashoffset="${off}"></circle></svg><div class="ring-pct">${x.progress||0}%</div></div><div class="goal-info"><div class="gn">${x.name}</div><div class="gs">${x.current||'–'} → ${x.target||'–'}</div></div><i class="ti ti-chevron-right" style="color:var(--text-3);font-size:17px"></i></div>`;
+  }).join('');
+  const hg=document.getElementById('home-goals');if(hg) hg.innerHTML=html(userGoals.slice(0,2))||'<div style="font-size:12px;color:var(--text-3);padding:6px 2px">Inga mål satta — gå till Profil för att lägga till.</div>';
+  const gl=document.getElementById('goals-list');if(gl) gl.innerHTML=html(userGoals)||'<div style="text-align:center;color:var(--text-3);font-size:13px;padding:16px">Inga mål satta än</div>';
+}
+
+function openNewGoal(){
+  editingGoalId=null;
+  pendingGoalColor=GOAL_COLORS[0];
+  document.getElementById('goal-modal-title').textContent='Nytt mål';
+  document.getElementById('goal-f-name').value='';
+  document.getElementById('goal-f-current').value='';
+  document.getElementById('goal-f-target').value='';
+  document.getElementById('goal-f-progress').value='0';
+  document.getElementById('goal-f-weeks').value='';
+  document.getElementById('goal-delete-btn').style.display='none';
+  renderGoalColorChips();
+  openModal('m-edit-goal');
+}
+
+function openEditGoal(id){
+  const g=userGoals.find(x=>x.id===id);
+  if(!g) return;
+  editingGoalId=id;
+  pendingGoalColor=g.color||GOAL_COLORS[0];
+  document.getElementById('goal-modal-title').textContent='Redigera mål';
+  document.getElementById('goal-f-name').value=g.name||'';
+  document.getElementById('goal-f-current').value=g.current||'';
+  document.getElementById('goal-f-target').value=g.target||'';
+  document.getElementById('goal-f-progress').value=g.progress||0;
+  document.getElementById('goal-f-weeks').value=g.targetWeeks||'';
+  document.getElementById('goal-delete-btn').style.display='inline-flex';
+  renderGoalColorChips();
+  openModal('m-edit-goal');
+}
+
+function renderGoalColorChips(){
+  const c=document.getElementById('goal-f-colors');
+  if(!c) return;
+  c.innerHTML=GOAL_COLORS.map(col=>`<button onclick="setGoalColor('${col}')" style="width:30px;height:30px;border-radius:50%;border:${pendingGoalColor===col?'3px solid var(--text-1)':'1px solid var(--border)'};background:${col};cursor:pointer;padding:0"></button>`).join('');
+}
+
+function setGoalColor(col){pendingGoalColor=col;renderGoalColorChips();}
+
+function saveGoal(){
+  const name=document.getElementById('goal-f-name').value.trim();
+  if(!name) return;
+  const current=document.getElementById('goal-f-current').value.trim();
+  const target=document.getElementById('goal-f-target').value.trim();
+  const progress=Math.max(0,Math.min(100,parseInt(document.getElementById('goal-f-progress').value)||0));
+  const weeksVal=document.getElementById('goal-f-weeks').value;
+  const targetWeeks=weeksVal?parseInt(weeksVal):null;
+  const data={name,current,target,progress,targetWeeks,color:pendingGoalColor};
+  if(editingGoalId){
+    const g=userGoals.find(x=>x.id===editingGoalId);
+    if(g) Object.assign(g,data);
+  }else{
+    userGoals.push({id:crypto.randomUUID(),...data});
+  }
+  saveState();
+  closeModal('m-edit-goal');
+  renderGoals();
+}
+
+function deleteGoal(){
+  if(!editingGoalId) return;
+  const g=userGoals.find(x=>x.id===editingGoalId);
+  if(!g) return;
+  if(!confirm(`Ta bort målet "${g.name}"?`)) return;
+  const i=userGoals.findIndex(x=>x.id===editingGoalId);
+  if(i>=0) userGoals.splice(i,1);
+  editingGoalId=null;
+  saveState();
+  closeModal('m-edit-goal');
+  renderGoals();
 }
 
 /* ========== CALENDAR / SCHEDULE ========== */
@@ -3449,6 +3584,7 @@ function getCurrentPrimaryForm(){
 loadState();
 migrateNestedToBank();
 migrateExercisesToPrimaryForm();
+migrateGoalsAddIds();
 saveState();
 populateExModal();
 updateThemeUI();
