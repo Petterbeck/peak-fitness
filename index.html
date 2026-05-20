@@ -793,14 +793,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <div class="modal" id="m-workout-detail" onclick="closeBg(event,'m-workout-detail')">
   <div class="modal-sheet"><div class="modal-handle"></div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
       <button class="back-btn" onclick="closeModal('m-workout-detail')"><i class="ti ti-arrow-left"></i> Tillbaka</button>
-      <div class="modal-title" id="wd-title" style="margin:0;flex:1">Pass-logg</div>
+      <div class="modal-title" id="wd-title" style="margin:0;flex:1;font-size:15px">Pass-logg</div>
+      <button class="btn-sm" onclick="toggleWorkoutEditMode()" id="wd-edit-btn" style="background:var(--surface-2);color:var(--text-1)"><i class="ti ti-edit"></i> Redigera</button>
     </div>
     <div id="wd-meta" style="background:var(--surface-2);border-radius:var(--r);padding:11px 13px;margin-bottom:12px;font-size:13px;line-height:1.5"></div>
     <div id="wd-exercises" style="display:flex;flex-direction:column;gap:8px"></div>
     <div id="wd-note" style="margin-top:12px;font-size:13px;color:var(--text-2);font-style:italic;padding:0 2px"></div>
-    <button class="btn-ghost" onclick="deleteWorkoutLog()" style="margin-top:14px;color:#e8200a;border-color:#e8200a;font-weight:700"><i class="ti ti-trash"></i> Ta bort denna logg</button>
+    <div id="wd-bottom-actions" style="margin-top:14px"></div>
   </div>
 </div>
 
@@ -1689,11 +1690,11 @@ function navigate(id){
   const m={'page-home':'nav-home','page-plan':'nav-plan','page-log':'nav-home','page-history':'nav-history','page-coach':'nav-coach','page-profile':'nav-home','page-stats':'nav-home'};
   if(m[id]) document.getElementById(m[id])?.classList.add('active');
   if(id==='page-stats') setTimeout(renderStatsPage,50);
-  if(id==='page-home'){renderHomeHero();renderHomeStats();renderStreak();}
+  if(id==='page-home'){renderHomeHero();renderHomeStats();renderStreak();renderGoals();}
   if(id==='page-plan'){renderWeekSchedule();renderCalendar();}
   if(id==='page-log') renderLogPassList();
   if(id==='page-history') renderHistory();
-  if(id==='page-profile'){renderProfileInfo();renderLastSync();}
+  if(id==='page-profile'){renderProfileInfo();renderLastSync();renderGoals();}
   window.scrollTo(0,0);
 }
 
@@ -3386,13 +3387,24 @@ function addRestDayAndRefresh(){
 }
 
 let currentWorkoutDetailId=null;
+let workoutEditMode=false;
 
 function showWorkoutDetail(workoutId){
-  const w=workoutHistory.find(x=>x.id===workoutId);
-  if(!w) return;
   currentWorkoutDetailId=workoutId;
-  // Stäng dag-modalen om öppen så detaljen blir överst
+  workoutEditMode=false;
   closeModal('m-day');
+  renderWorkoutDetail();
+  openModal('m-workout-detail');
+}
+
+function toggleWorkoutEditMode(){
+  workoutEditMode=!workoutEditMode;
+  renderWorkoutDetail();
+}
+
+function renderWorkoutDetail(){
+  const w=workoutHistory.find(x=>x.id===currentWorkoutDetailId);
+  if(!w) return;
   document.getElementById('wd-title').textContent=w.passName||'Pass';
   // Meta-info
   const date=new Date(w.date);
@@ -3401,42 +3413,128 @@ function showWorkoutDetail(workoutId){
   const durStr=dur>0?`${Math.floor(dur/60)} min ${String(dur%60).padStart(2,'0')} sek`:'–';
   const feelEmoji=w.feel?['😩','😐','🙂','💪','🔥'][w.feel-1]:'';
   const feelLabel=w.feel?['Tungt','Okej','Bra','Stark','Episkt'][w.feel-1]:'Ej satt';
-  document.getElementById('wd-meta').innerHTML=`
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <div style="font-weight:700">${dateStr}</div>
-      <div style="font-size:11px;color:var(--text-2)">${w.formName||''}</div>
-    </div>
-    <div style="display:flex;gap:14px;font-size:12px;color:var(--text-2)">
-      <div><i class="ti ti-clock" style="font-size:14px;vertical-align:-2px"></i> ${durStr}</div>
-      <div><span style="font-size:14px">${feelEmoji}</span> ${feelLabel}</div>
-      <div><i class="ti ti-barbell" style="font-size:14px;vertical-align:-2px"></i> ${(w.exercises||[]).length} övn</div>
-    </div>`;
-  // Övningar med set
+  if(workoutEditMode){
+    // Editerbar meta: bara känsla (resten = read-only)
+    document.getElementById('wd-meta').innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-weight:700">${dateStr}</div>
+        <div style="font-size:11px;color:var(--text-2)">${w.formName||''}</div>
+      </div>
+      <div style="display:flex;gap:14px;font-size:12px;color:var(--text-2);margin-bottom:10px">
+        <div><i class="ti ti-clock" style="font-size:14px;vertical-align:-2px"></i> ${durStr}</div>
+        <div><i class="ti ti-barbell" style="font-size:14px;vertical-align:-2px"></i> ${(w.exercises||[]).length} övn</div>
+      </div>
+      <div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase;margin-bottom:6px">Hur kändes passet?</div>
+      <div class="feel-scale" id="wd-feel-scale">
+        ${[1,2,3,4,5].map(n=>`<button class="feel-btn ${w.feel===n?'active':''}" onclick="setWorkoutEditFeel(${n})">${['😩','😐','🙂','💪','🔥'][n-1]}</button>`).join('')}
+      </div>`;
+  }else{
+    document.getElementById('wd-meta').innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-weight:700">${dateStr}</div>
+        <div style="font-size:11px;color:var(--text-2)">${w.formName||''}</div>
+      </div>
+      <div style="display:flex;gap:14px;font-size:12px;color:var(--text-2)">
+        <div><i class="ti ti-clock" style="font-size:14px;vertical-align:-2px"></i> ${durStr}</div>
+        <div><span style="font-size:14px">${feelEmoji}</span> ${feelLabel}</div>
+        <div><i class="ti ti-barbell" style="font-size:14px;vertical-align:-2px"></i> ${(w.exercises||[]).length} övn</div>
+      </div>`;
+  }
+  // Övningar
   const exList=document.getElementById('wd-exercises');
   if(!w.exercises||!w.exercises.length){
     exList.innerHTML='<div style="text-align:center;color:var(--text-3);font-size:13px;padding:14px">Inga övningar registrerade</div>';
   }else{
-    exList.innerHTML=w.exercises.map((ex,i)=>{
-      const sets=(ex.sets||[]).filter(s=>s.done||s.w||s.r);
-      const setsHtml=sets.length?sets.map((s,si)=>{
-        const isCardio=ex.cat==='cardio';
-        const wLabel=isCardio?'Dist':'Vikt';
-        const rLabel=isCardio?'Tid':'Reps';
-        return `<div style="display:grid;grid-template-columns:24px 1fr 1fr 24px;gap:6px;font-size:12px;padding:4px 0;align-items:center"><div style="color:var(--text-3);font-weight:700;text-align:center">${si+1}</div><div style="text-align:center"><span style="font-weight:700">${s.w||'–'}</span> <span style="color:var(--text-3);font-size:10px">${wLabel.toLowerCase()}</span></div><div style="text-align:center"><span style="font-weight:700">${s.r||'–'}</span> <span style="color:var(--text-3);font-size:10px">${rLabel.toLowerCase()}</span></div><div style="text-align:center;color:${s.done?'var(--accent-3)':'var(--text-3)'}">${s.done?'<i class="ti ti-check"></i>':'–'}</div></div>`;
-      }).join(''):'<div style="font-size:12px;color:var(--text-3);padding:6px 0">Inga set registrerade</div>';
+    exList.innerHTML=w.exercises.map((ex,exIdx)=>{
+      const isCardio=ex.cat==='cardio';
+      const wLabel=isCardio?'Dist':'Vikt';
+      const rLabel=isCardio?'Tid':'Reps';
+      let setsHtml;
+      if(workoutEditMode){
+        setsHtml=`<div class="set-labels"><span>Set</span><span>${wLabel}</span><span>${rLabel}</span><span></span></div>`;
+        setsHtml+=(ex.sets||[]).map((s,si)=>`
+          <div class="set-row">
+            <div class="set-num">${si+1}</div>
+            <input class="set-input ${s.done?'done':''}" type="number" value="${s.w||''}" placeholder="–" onchange="updWE(${exIdx},${si},'w',this.value)" step="${isCardio?'0.1':'2.5'}" inputmode="decimal">
+            <input class="set-input ${s.done?'done':''}" type="number" value="${s.r||''}" placeholder="–" onchange="updWE(${exIdx},${si},'r',this.value)" step="${isCardio?'0.5':'1'}" inputmode="decimal">
+            <button class="set-check ${s.done?'done':''}" onclick="togWE(${exIdx},${si})"><i class="ti ti-check"></i></button>
+          </div>`).join('');
+      }else{
+        const sets=(ex.sets||[]).filter(s=>s.done||s.w||s.r);
+        setsHtml=sets.length?sets.map((s,si)=>{
+          return `<div style="display:grid;grid-template-columns:24px 1fr 1fr 24px;gap:6px;font-size:12px;padding:4px 0;align-items:center"><div style="color:var(--text-3);font-weight:700;text-align:center">${si+1}</div><div style="text-align:center"><span style="font-weight:700">${s.w||'–'}</span> <span style="color:var(--text-3);font-size:10px">${wLabel.toLowerCase()}</span></div><div style="text-align:center"><span style="font-weight:700">${s.r||'–'}</span> <span style="color:var(--text-3);font-size:10px">${rLabel.toLowerCase()}</span></div><div style="text-align:center;color:${s.done?'var(--accent-3)':'var(--text-3)'}">${s.done?'<i class="ti ti-check"></i>':'–'}</div></div>`;
+        }).join(''):'<div style="font-size:12px;color:var(--text-3);padding:6px 0">Inga set registrerade</div>';
+      }
       return `
       <div class="ex-block">
         <div class="ex-block-head">
-          <div class="ex-block-num">${i+1}</div>
+          <div class="ex-block-num">${exIdx+1}</div>
           <div class="ex-block-name">${ex.name}</div>
         </div>
-        <div style="padding:6px 13px">${setsHtml}</div>
+        ${workoutEditMode?setsHtml:'<div style="padding:6px 13px">'+setsHtml+'</div>'}
       </div>`;
     }).join('');
   }
+  // Anteckning + bottom actions
+  const noteContainer=document.getElementById('wd-note');
+  if(workoutEditMode){
+    noteContainer.innerHTML=`<input class="field-input" id="wd-note-edit" placeholder="Anteckning…" value="${(w.note||'').replace(/"/g,'&quot;')}" style="font-style:normal;color:var(--text-1)">`;
+  }else{
+    noteContainer.textContent=w.note?`"${w.note}"`:'';
+  }
+  // Toggla edit-knapp + bottom buttons
+  const editBtn=document.getElementById('wd-edit-btn');
+  if(editBtn) editBtn.innerHTML=workoutEditMode?'<i class="ti ti-x"></i> Avbryt':'<i class="ti ti-edit"></i> Redigera';
+  const bottomActions=document.getElementById('wd-bottom-actions');
+  if(bottomActions){
+    if(workoutEditMode){
+      bottomActions.innerHTML=`
+        <button class="btn-primary" onclick="saveWorkoutEdits()" style="width:100%"><i class="ti ti-check"></i> Spara ändringar</button>
+        <button class="btn-ghost" onclick="deleteWorkoutLog()" style="width:100%;color:#e8200a;border-color:#e8200a44;background:transparent;font-weight:600;font-size:12px;padding:9px;margin-top:8px"><i class="ti ti-trash"></i> Ta bort denna logg</button>`;
+    }else{
+      bottomActions.innerHTML=`<button class="btn-ghost" onclick="deleteWorkoutLog()" style="color:#e8200a;border-color:#e8200a;font-weight:700"><i class="ti ti-trash"></i> Ta bort denna logg</button>`;
+    }
+  }
+}
+
+function setWorkoutEditFeel(n){
+  const w=workoutHistory.find(x=>x.id===currentWorkoutDetailId);
+  if(!w) return;
+  w.feel=n;
+  // Uppdatera bara feel-knappar utan full re-render
+  document.querySelectorAll('#wd-feel-scale .feel-btn').forEach((b,i)=>b.classList.toggle('active',i+1===n));
+}
+
+function updWE(exIdx,setIdx,key,val){
+  const w=workoutHistory.find(x=>x.id===currentWorkoutDetailId);
+  if(!w) return;
+  const s=w.exercises?.[exIdx]?.sets?.[setIdx];
+  if(!s) return;
+  s[key]=parseFloat(val)||0;
+}
+
+function togWE(exIdx,setIdx){
+  const w=workoutHistory.find(x=>x.id===currentWorkoutDetailId);
+  if(!w) return;
+  const s=w.exercises?.[exIdx]?.sets?.[setIdx];
+  if(!s) return;
+  s.done=!s.done;
+  renderWorkoutDetail();
+}
+
+function saveWorkoutEdits(){
+  const w=workoutHistory.find(x=>x.id===currentWorkoutDetailId);
+  if(!w) return;
   // Anteckning
-  document.getElementById('wd-note').textContent=w.note?`"${w.note}"`:'';
-  openModal('m-workout-detail');
+  const noteEl=document.getElementById('wd-note-edit');
+  if(noteEl) w.note=noteEl.value.trim();
+  // Set-värden + feel uppdateras live via updWE/togWE/setWorkoutEditFeel
+  saveState();
+  workoutEditMode=false;
+  renderWorkoutDetail();
+  // Recompute alla vyer eftersom ändringen kan påverka mål/stats
+  renderHomeStats();renderStreak();renderProfileInfo();renderGoals();renderCalendar();
+  if(dayModalDate) renderDayCompletedList();
 }
 
 function deleteWorkoutLog(){
@@ -3446,10 +3544,14 @@ function deleteWorkoutLog(){
   currentWorkoutDetailId=null;
   saveState();
   closeModal('m-workout-detail');
-  // Refresha dag-modalen om öppen
+  // Refresha alla vyer som kan påverkas av borttagen logg
   if(dayModalDate){renderDayCompletedList();}
   renderCalendar();
   renderHomeHero();
+  renderHomeStats();
+  renderStreak();
+  renderProfileInfo();
+  renderGoals();
 }
 
 function renderDayPassList(){
