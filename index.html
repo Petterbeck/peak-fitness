@@ -675,14 +675,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <!-- AUTO-fält -->
       <div id="goal-auto-fields" style="display:flex;flex-direction:column;gap:12px">
         <div><label class="field-label">Övning</label>
-          <select class="field-select" id="goal-f-exercise"></select>
+          <select class="field-select" id="goal-f-exercise" onchange="updateGoalCurrentInfo()"></select>
         </div>
         <div><label class="field-label">Vad mäts</label>
-          <select class="field-select" id="goal-f-metric"></select>
+          <select class="field-select" id="goal-f-metric" onchange="updateGoalCurrentInfo()"></select>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div><label class="field-label">Startvärde</label><input class="field-input" id="goal-f-start" placeholder="T.ex. 60 eller 4:00"></div>
           <div><label class="field-label">Målvärde</label><input class="field-input" id="goal-f-target-num" placeholder="T.ex. 100 eller 3:30"></div>
+        </div>
+        <div id="goal-current-info" style="background:var(--surface-2);border-radius:var(--r-sm);padding:10px 12px;font-size:12px;display:none">
+          <div><span style="font-weight:700">Just nu:</span> <span id="goal-current-value" style="color:var(--accent)">–</span></div>
+          <div id="goal-current-source" style="font-size:11px;color:var(--text-3);margin-top:3px">Från senaste loggade pass</div>
         </div>
         <div class="notice" style="font-size:11px;line-height:1.5">💡 Min tid: skriv som <code>3:30</code> eller <code>3.5</code> (= 3 min 30 sek). Progress räknas automatiskt från senaste loggade pass.</div>
       </div>
@@ -706,10 +710,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <div class="chip-row" id="goal-f-colors" style="flex-wrap:wrap;gap:6px"></div>
       </div>
 
-      <div style="display:flex;gap:8px">
-        <button class="btn-primary" onclick="saveGoal()" style="flex:1"><i class="ti ti-check"></i> Spara</button>
-        <button class="btn-ghost" onclick="deleteGoal()" id="goal-delete-btn" style="flex:0 0 auto;color:#e8200a;border-color:#e8200a;background:transparent;font-weight:700;display:none"><i class="ti ti-trash"></i> Ta bort</button>
-      </div>
+      <label style="display:flex;align-items:center;gap:10px;background:var(--surface-2);border-radius:var(--r-sm);padding:10px 12px;cursor:pointer">
+        <input type="checkbox" id="goal-f-showonhome" style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer">
+        <span style="font-size:13px;font-weight:600;flex:1">Visa på Hem-sidan</span>
+        <span style="font-size:10px;color:var(--text-3)">(max 4 visas)</span>
+      </label>
+
+      <button class="btn-primary" onclick="saveGoal()" style="width:100%"><i class="ti ti-check"></i> Spara</button>
+      <button class="btn-ghost" onclick="deleteGoal()" id="goal-delete-btn" style="width:100%;color:#e8200a;border-color:#e8200a44;background:transparent;font-weight:600;font-size:12px;padding:9px;display:none"><i class="ti ti-trash"></i> Ta bort detta mål</button>
     </div>
   </div>
 </div>
@@ -1449,7 +1457,10 @@ const userGoals=[
 
 function migrateGoalsAddIds(){
   let changed=false;
-  userGoals.forEach(g=>{if(!g.id){g.id=crypto.randomUUID();changed=true;}});
+  userGoals.forEach(g=>{
+    if(!g.id){g.id=crypto.randomUUID();changed=true;}
+    if(g.showOnHome===undefined){g.showOnHome=true;changed=true;}
+  });
   if(changed) saveState();
 }
 
@@ -3053,13 +3064,25 @@ function renderGoals(){
     const calc=calcGoalProgress(x);
     const off=138.2-(calc.progress/100)*138.2;
     const weeksTxt=calc.weeksLeft!=null?(calc.weeksLeft<=0?'⏰ Tidsram passerad':`⏳ ${calc.weeksLeft} v kvar`):'';
-    const sub=calc.mode==='auto'?
-      `${calc.currentDisplay} → ${calc.targetDisplay}${weeksTxt?` · ${weeksTxt}`:''}`:
-      `${x.current||'–'} → ${x.target||'–'}${weeksTxt?` · ${weeksTxt}`:''}`;
+    let sub;
+    if(calc.mode==='auto'){
+      if(calc.progress>=100&&calc.hasData){
+        sub=`✅ Mål nått! Just nu ${calc.currentDisplay}${weeksTxt?' · '+weeksTxt:''}`;
+      }else{
+        const nowTxt=calc.hasData?` · nu ${calc.currentDisplay}`:'';
+        sub=`${calc.startDisplay} → ${calc.targetDisplay}${nowTxt}${weeksTxt?' · '+weeksTxt:''}`;
+      }
+    }else{
+      sub=`${x.current||'–'} → ${x.target||'–'}${weeksTxt?' · '+weeksTxt:''}`;
+    }
     return`<div class="goal-card" onclick="openEditGoal('${x.id}')"><div class="goal-ring"><svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="22" fill="none" stroke="var(--surface-2)" stroke-width="5"></circle><circle cx="26" cy="26" r="22" fill="none" stroke="${x.color||'#e8440a'}" stroke-width="5" stroke-linecap="round" stroke-dasharray="138.2" stroke-dashoffset="${off}"></circle></svg><div class="ring-pct">${calc.progress}%</div></div><div class="goal-info"><div class="gn">${x.name}</div><div class="gs">${sub}</div></div><i class="ti ti-chevron-right" style="color:var(--text-3);font-size:17px"></i></div>`;
   }).join('');
-  const hg=document.getElementById('home-goals');if(hg) hg.innerHTML=html(userGoals.slice(0,2))||'<div style="font-size:12px;color:var(--text-3);padding:6px 2px">Inga mål satta — gå till Profil för att lägga till.</div>';
-  const gl=document.getElementById('goals-list');if(gl) gl.innerHTML=html(userGoals)||'<div style="text-align:center;color:var(--text-3);font-size:13px;padding:16px">Inga mål satta än</div>';
+  // På Hem: bara mål med showOnHome=true (max 4)
+  const homeGoals=userGoals.filter(g=>g.showOnHome!==false).slice(0,4);
+  const hg=document.getElementById('home-goals');
+  if(hg) hg.innerHTML=html(homeGoals)||'<div style="font-size:12px;color:var(--text-3);padding:6px 2px">Inga mål visas på hem. Aktivera "Visa på hem" i ett mål.</div>';
+  const gl=document.getElementById('goals-list');
+  if(gl) gl.innerHTML=html(userGoals)||'<div style="text-align:center;color:var(--text-3);font-size:13px;padding:16px">Inga mål satta än</div>';
 }
 
 let pendingGoalMode='auto';
@@ -3072,6 +3095,33 @@ function setGoalMode(mode){
   else if(mode==='manual'&&btns[1]) btns[1].classList.add('active');
   document.getElementById('goal-auto-fields').style.display=mode==='auto'?'flex':'none';
   document.getElementById('goal-manual-fields').style.display=mode==='manual'?'flex':'none';
+  if(mode==='auto') updateGoalCurrentInfo();
+}
+
+function updateGoalCurrentInfo(){
+  const infoEl=document.getElementById('goal-current-info');
+  if(!infoEl) return;
+  const exerciseName=document.getElementById('goal-f-exercise')?.value;
+  const metric=document.getElementById('goal-f-metric')?.value;
+  if(!exerciseName||!metric||pendingGoalMode!=='auto'){
+    infoEl.style.display='none';
+    return;
+  }
+  const samples=getMetricSamples(exerciseName,metric);
+  const valEl=document.getElementById('goal-current-value');
+  const srcEl=document.getElementById('goal-current-source');
+  if(!samples.length){
+    valEl.textContent='Inga pass loggade än';
+    valEl.style.color='var(--text-3)';
+    srcEl.textContent='Logga ett pass med denna övning så uppdateras värdet automatiskt';
+  }else{
+    const latest=samples[samples.length-1];
+    const m=METRIC_BY_ID[metric];
+    valEl.textContent=metricFormat(latest.value,metric)+' '+(m?.unit||'');
+    valEl.style.color='var(--accent)';
+    srcEl.textContent=`Från ${latest.date.toLocaleDateString('sv-SE')} · ${samples.length} pass loggade totalt`;
+  }
+  infoEl.style.display='block';
 }
 
 function populateGoalExercisePicker(){
@@ -3105,6 +3155,7 @@ function openNewGoal(){
   document.getElementById('goal-f-progress').value='0';
   document.getElementById('goal-f-startdate').value=todayIso();
   document.getElementById('goal-f-weeks').value='';
+  document.getElementById('goal-f-showonhome').checked=true;
   document.getElementById('goal-delete-btn').style.display='none';
   setGoalMode('auto');
   renderGoalColorChips();
@@ -3131,7 +3182,8 @@ function openEditGoal(id){
   document.getElementById('goal-f-progress').value=g.progress||0;
   document.getElementById('goal-f-startdate').value=g.startDate||todayIso();
   document.getElementById('goal-f-weeks').value=g.targetWeeks||'';
-  document.getElementById('goal-delete-btn').style.display='inline-flex';
+  document.getElementById('goal-f-showonhome').checked=g.showOnHome!==false;
+  document.getElementById('goal-delete-btn').style.display='block';
   setGoalMode(pendingGoalMode);
   renderGoalColorChips();
   openModal('m-edit-goal');
@@ -3151,9 +3203,10 @@ function saveGoal(){
   const startDate=document.getElementById('goal-f-startdate').value||todayIso();
   const weeksVal=document.getElementById('goal-f-weeks').value;
   const targetWeeks=weeksVal?parseInt(weeksVal):null;
+  const showOnHome=document.getElementById('goal-f-showonhome').checked;
   let data={
     name,trackingMode:pendingGoalMode,
-    color:pendingGoalColor,startDate,targetWeeks
+    color:pendingGoalColor,startDate,targetWeeks,showOnHome
   };
   if(pendingGoalMode==='auto'){
     const exerciseName=document.getElementById('goal-f-exercise').value;
