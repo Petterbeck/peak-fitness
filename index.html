@@ -351,7 +351,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="tab-passes" style="display:none;flex-direction:column;gap:10px">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn-primary" onclick="openNewPass()" style="flex:1;min-width:160px"><i class="ti ti-plus"></i> Nytt träningspass</button>
-        <button class="btn-ghost" onclick="openModal('m-add-form')" style="flex:1;min-width:140px;font-size:12px;font-weight:700"><i class="ti ti-folder-plus"></i> Ny träningsform</button>
+        <button class="btn-ghost" onclick="openImportProgram()" style="flex:1;min-width:140px;font-size:12px;font-weight:700;color:var(--accent-4);border-color:var(--accent-4)"><i class="ti ti-sparkles"></i> Importera (AI)</button>
+        <button class="btn-ghost" onclick="openModal('m-add-form')" style="flex:0 0 auto;padding:0 14px;font-size:12px" title="Ny träningsform"><i class="ti ti-folder-plus"></i></button>
       </div>
       <input class="search-bar" id="pass-search" placeholder="Sök pass..." oninput="renderPassList()">
       <div>
@@ -663,6 +664,48 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div><label class="field-label">Kategori</label><select class="field-select" id="nf-cat"><option value="strength">Styrketräning</option><option value="cardio">Kondition</option><option value="bodyweight">Egen vikt</option><option value="mobility">Rörlighet/Yoga</option></select></div>
       <button class="btn-primary" onclick="addForm()"><i class="ti ti-check"></i> Skapa</button>
     </div>
+  </div>
+</div>
+
+<div class="modal" id="m-import-program" onclick="closeBg(event,'m-import-program')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+
+    <!-- VY 1: Input -->
+    <div id="imp-view-input">
+      <div class="modal-title">Importera träningsprogram</div>
+      <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Klistra in ett färdigt program (t.ex. från en tränare, klubb eller PDF). AI tolkar och föreslår pass + övningar — du verifierar innan import.</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <label class="field-label">Programtext</label>
+          <textarea class="field-input" id="imp-text" rows="8" placeholder="T.ex.:&#10;&#10;LSK Slalom-program&#10;&#10;PASS 1 - Styrka A&#10;- Knäböj 5x5 80 kg&#10;- Marklyft 3x5 100 kg&#10;- Bulgarian split squat 3x10&#10;&#10;PASS 2 - Intervaller&#10;- 8x400m i Z4 med 90s vila" style="resize:vertical;min-height:140px;font-family:inherit"></textarea>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><label class="field-label">Prefix (på pass-namn)</label><input class="field-input" id="imp-prefix" placeholder="T.ex. LSK"></div>
+          <div><label class="field-label">Tagg (sökbar)</label><input class="field-input" id="imp-tag" placeholder="T.ex. Lidingö Slalom"></div>
+        </div>
+        <div class="notice" style="font-size:11px;line-height:1.5">💡 Prefix sätts framför varje pass-namn (LSK - Styrka A). Taggen blir custom-tag på pass och övningar så du kan filtrera.</div>
+        <button class="btn-primary" onclick="analyzeImport()"><i class="ti ti-sparkles"></i> Analysera med AI</button>
+      </div>
+    </div>
+
+    <!-- VY 2: Loading -->
+    <div id="imp-view-loading" style="display:none;text-align:center;padding:40px 20px">
+      <div style="font-size:48px;margin-bottom:14px">🤖</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">AI analyserar programmet…</div>
+      <div id="imp-loading-detail" style="font-size:12px;color:var(--text-2);line-height:1.5">Det tar vanligtvis 5–20 sekunder beroende på programmets storlek.</div>
+    </div>
+
+    <!-- VY 3: Preview -->
+    <div id="imp-view-preview" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <button class="back-btn" onclick="showImpView('input')"><i class="ti ti-arrow-left"></i> Tillbaka</button>
+        <div class="modal-title" style="margin:0;flex:1;font-size:15px">Förhandsvisning</div>
+      </div>
+      <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:10px">AI tolkade <b id="imp-pass-count">0</b> pass. Bocka av sådana du inte vill importera och justera träningsform per pass om något blev fel.</div>
+      <div id="imp-preview-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
+      <button class="btn-primary" onclick="confirmImport()" style="width:100%"><i class="ti ti-check"></i> Importera valda pass</button>
+    </div>
+
   </div>
 </div>
 
@@ -1173,6 +1216,210 @@ function renderProfileInfo(){
   if(levelEl) levelEl.textContent=levelMap[userProfile.level||'beginner']||'Nybörjare';
   const passEl=document.getElementById('profile-passcount');
   if(passEl) passEl.textContent=`${workoutHistory.length} pass`;
+}
+
+/* ========== PROGRAM-IMPORT (AI) ========== */
+let importedData=null;
+
+function openImportProgram(){
+  document.getElementById('imp-text').value='';
+  document.getElementById('imp-prefix').value='';
+  document.getElementById('imp-tag').value='';
+  showImpView('input');
+  openModal('m-import-program');
+}
+
+function showImpView(view){
+  ['input','loading','preview'].forEach(v=>{
+    const el=document.getElementById('imp-view-'+v);
+    if(el) el.style.display=v===view?'block':'none';
+  });
+}
+
+async function analyzeImport(){
+  const text=document.getElementById('imp-text').value.trim();
+  const prefix=document.getElementById('imp-prefix').value.trim();
+  const tag=document.getElementById('imp-tag').value.trim();
+  if(!text){alert('Klistra in programmet först');return;}
+  showImpView('loading');
+  const systemPrompt=`Du är expert på att tolka träningsprogram. Användaren har klistrat in ett program och du ska strukturera det till JSON för en träningsapp.
+
+Returnera ENBART en JSON-array (inga kommentarer, ingen markdown, ingen text utanför JSON). Format:
+
+{
+  "passes": [
+    {
+      "name": "string (utan prefix - vi lägger på det)",
+      "description": "kort beskrivning",
+      "primaryForm": "strength|bodyweight|running|cycling|mobility|group|other",
+      "subTags": ["string", ...],
+      "exercises": [
+        {
+          "name": "string (svenska)",
+          "muscle": "Bröst|Rygg|Ben|Axlar|Armar|Bål|Höft|Ryggrad|Kondition|Explosivitet|Rörlighet",
+          "sets": number,
+          "reps": number eller null,
+          "weight": number eller null,
+          "distance": number eller null,
+          "time": number eller null,
+          "pulseZone": 1-5 eller null,
+          "note": "string"
+        }
+      ]
+    }
+  ]
+}
+
+Viktigt:
+- primaryForm MÅSTE vara en av: strength, bodyweight, running, cycling, mobility, group, other
+- För cardio (running/cycling): använd distance (km) + time (min), sätt reps=null
+- För styrka: använd weight (kg) + reps
+- För egen vikt: weight kan vara null
+- Översätt övningar till svenska om de är på annat språk
+- Om en övning är "8x400m" → sets=8, distance=0.4, time=null, primaryForm=running, muscle=Kondition`;
+  try{
+    const result=await callClaude(text,{system:systemPrompt,max_tokens:4096});
+    let cleaned=result.text.trim();
+    // Hantera om Claude wrappar i markdown code block
+    if(cleaned.startsWith('```')){
+      cleaned=cleaned.replace(/^```(?:json)?\s*\n?/,'').replace(/\n?```\s*$/,'');
+    }
+    const data=JSON.parse(cleaned);
+    if(!data.passes||!Array.isArray(data.passes)||!data.passes.length){
+      throw new Error('AI:n returnerade inga pass — kontrollera programtexten och försök igen');
+    }
+    importedData={data,prefix,tag};
+    renderImportPreview();
+    showImpView('preview');
+  }catch(e){
+    showImpView('input');
+    alert('Fel vid analys: '+e.message);
+  }
+}
+
+const PRIMARY_TO_FORM_CAT={strength:'strength',bodyweight:'bodyweight',running:'cardio',cycling:'cardio',mobility:'mobility',group:'strength',other:'strength'};
+
+function guessTrainingForm(primaryForm){
+  const cat=PRIMARY_TO_FORM_CAT[primaryForm]||'strength';
+  // Hitta första träningsform som matchar cat
+  return trainingForms.find(f=>f.cat===cat)||trainingForms[0];
+}
+
+function renderImportPreview(){
+  const {data,prefix,tag}=importedData;
+  document.getElementById('imp-pass-count').textContent=data.passes.length;
+  const formOptions=trainingForms.map(f=>`<option value="${f.id}">${f.icon} ${f.name}</option>`).join('')+'<option value="__new__">+ Skapa ny träningsform</option>';
+  const html=data.passes.map((p,i)=>{
+    const defaultForm=guessTrainingForm(p.primaryForm);
+    const setOptions=formOptions.replace(`value="${defaultForm?.id}"`,`value="${defaultForm?.id}" selected`);
+    const exList=(p.exercises||[]).map(e=>{
+      const setsReps=e.reps?`${e.sets}×${e.reps}`:(e.time?`${e.sets}× ${e.time} min`:`${e.sets} set`);
+      const dist=e.distance?` · ${e.distance} km`:'';
+      const w=e.weight?` · ${e.weight} kg`:'';
+      const pz=e.pulseZone?` · Z${e.pulseZone}`:'';
+      return `<div style="padding:3px 0;border-bottom:0.5px solid var(--border);font-size:11px"><b>${e.name}</b> <span style="color:var(--text-3)">· ${e.muscle||'–'} · ${setsReps}${dist}${w}${pz}</span></div>`;
+    }).join('');
+    return `
+    <div class="card" style="padding:12px">
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:pointer">
+        <input type="checkbox" id="imp-include-${i}" checked style="width:20px;height:20px;accent-color:var(--accent);cursor:pointer">
+        <input type="text" class="field-input" id="imp-name-${i}" value="${(prefix?prefix+' - ':'')+p.name}" style="flex:1;font-weight:700;font-size:14px">
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <select class="field-select" id="imp-form-${i}" style="font-size:12px">${setOptions}</select>
+        <select class="field-select" id="imp-primary-${i}" style="font-size:12px">${PRIMARY_FORMS.map(f=>`<option value="${f.id}" ${f.id===p.primaryForm?'selected':''}>${f.icon} ${f.label}</option>`).join('')}</select>
+      </div>
+      <div style="font-size:11px;color:var(--text-2);margin-bottom:6px">${(p.exercises||[]).length} övningar${tag?' · tag: '+tag:''}</div>
+      <details style="margin-top:4px"><summary style="font-size:11px;cursor:pointer;color:var(--accent);user-select:none">Visa övningar (${(p.exercises||[]).length})</summary><div style="margin-top:6px">${exList}</div></details>
+    </div>`;
+  }).join('');
+  document.getElementById('imp-preview-list').innerHTML=html;
+}
+
+async function confirmImport(){
+  if(!importedData) return;
+  const {data,tag}=importedData;
+  let passCount=0,newExCount=0,reusedExCount=0;
+  let lastFormId=null;
+  for(let i=0;i<data.passes.length;i++){
+    const inc=document.getElementById('imp-include-'+i)?.checked;
+    if(!inc) continue;
+    const p=data.passes[i];
+    const passName=document.getElementById('imp-name-'+i).value.trim()||p.name;
+    let formIdChoice=document.getElementById('imp-form-'+i).value;
+    const pfChoice=document.getElementById('imp-primary-'+i).value;
+    // Skapa ny träningsform om valt
+    let form;
+    if(formIdChoice==='__new__'){
+      const newName=importedData.prefix||p.name.split(' ')[0]||'Importerad';
+      form=trainingForms.find(f=>f.name===newName);
+      if(!form){
+        const cat=PRIMARY_TO_FORM_CAT[pfChoice]||'strength';
+        const iconMap={strength:'🏋️',bodyweight:'🤸',cardio:'🏃',mobility:'🧘'};
+        form={id:crypto.randomUUID(),name:newName,icon:iconMap[cat]||'💪',cat,passTypes:[]};
+        trainingForms.push(form);
+      }
+    }else{
+      form=trainingForms.find(f=>f.id===formIdChoice);
+    }
+    if(!form) form=trainingForms[0];
+    lastFormId=form.id;
+    // Skapa övningar i banken (skippa dubbletter)
+    const exerciseRefs=[];
+    for(const exData of (p.exercises||[])){
+      let ex=exercises.find(e=>e.name.toLowerCase().trim()===exData.name.toLowerCase().trim());
+      if(!ex){
+        const isCardio=pfChoice==='running'||pfChoice==='cycling';
+        const isBw=pfChoice==='bodyweight';
+        ex={
+          id:crypto.randomUUID(),
+          name:exData.name,
+          primaryForm:pfChoice,
+          muscle:exData.muscle||(isCardio?'Kondition':'Bål'),
+          defaultSets:exData.sets||3,
+          defaultReps:isCardio?(exData.time||0):(exData.reps||10),
+          defaultWeight:exData.weight??(isBw?userProfile.weightKg||null:null),
+          useBodyweight:isBw,
+          pulseZone:exData.pulseZone||null,
+          defaultDistance:exData.distance||null,
+          defaultTime:exData.time||null,
+          formTags:inferFormTags(isCardio?'cardio':isBw?'bodyweight':'strength',form.cat),
+          subTags:p.subTags||[],
+          customTags:tag?[tag]:[],
+          note:exData.note||'',
+          fav:false,
+          mediaUrl:null
+        };
+        exercises.push(ex);
+        newExCount++;
+      }else{
+        reusedExCount++;
+        if(tag&&!(ex.customTags||[]).includes(tag)){
+          ex.customTags=[...(ex.customTags||[]),tag];
+        }
+      }
+      // Set/reps på ref tas från importerad data
+      const refSets=exData.sets||ex.defaultSets;
+      const refReps=(pfChoice==='running'||pfChoice==='cycling')?(exData.time||ex.defaultReps):(exData.reps||ex.defaultReps);
+      exerciseRefs.push({exId:ex.id,sets:refSets,reps:refReps});
+    }
+    // Skapa pass
+    form.passTypes.push({
+      id:crypto.randomUUID(),
+      name:passName,
+      desc:p.description||'',
+      color:PRIMARY_FORM_BY_ID[pfChoice]?.color||'#5b52f0',
+      formTags:tag?[tag.toLowerCase().replace(/\s+/g,'-')]:[],
+      exerciseRefs
+    });
+    passCount++;
+  }
+  saveState();
+  closeModal('m-import-program');
+  importedData=null;
+  renderPassList();
+  renderExercises();
+  alert(`✅ Klart!\n\n${passCount} pass importerade\n${newExCount} nya övningar i banken${reusedExCount>0?`\n${reusedExCount} övningar matchade befintliga`:''}`);
 }
 
 /* ========== CLAUDE API TEST ========== */
