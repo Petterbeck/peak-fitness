@@ -477,16 +477,41 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <!-- STATS -->
 <div class="page" id="page-stats">
-  <div class="section-head"><div class="page-title">Statistik</div><div class="chart-pills"><button class="chart-pill" onclick="setRange(this)">1m</button><button class="chart-pill active" onclick="setRange(this)">3m</button><button class="chart-pill" onclick="setRange(this)">År</button></div></div>
-  <div class="chart-card"><div style="font-size:13px;font-weight:700;margin-bottom:2px">Bänkpress 1RM</div><div style="font-size:20px;font-weight:800">72 <span style="font-size:11px;color:var(--text-3)">kg</span> <span style="font-size:11px;color:var(--accent-3);font-weight:800">+8%</span></div><canvas id="c-bench" height="108" style="margin-top:10px"></canvas></div>
-  <div class="chart-card"><div style="font-size:13px;font-weight:700;margin-bottom:2px">5K-tid</div><div style="font-size:20px;font-weight:800">27:12 <span style="font-size:11px;color:var(--accent-3);font-weight:800">-1:48</span></div><canvas id="c-run" height="108" style="margin-top:10px"></canvas></div>
-  <div class="chart-card"><div style="font-size:13px;font-weight:700;margin-bottom:2px">Pass per vecka</div><div style="font-size:20px;font-weight:800">4,2 <span style="font-size:11px;color:var(--text-3)">snitt</span></div><canvas id="c-vol" height="108" style="margin-top:10px"></canvas></div>
-  <div class="stats-grid">
-    <div class="stat-card"><div class="sl">Totalt pass</div><div class="sv">47</div></div>
-    <div class="stat-card"><div class="sl">Längsta streak</div><div class="sv">14<span> d</span></div></div>
-    <div class="stat-card"><div class="sl">Snitt-känsla</div><div class="sv">4,1<span> 💪</span></div></div>
-    <div class="stat-card"><div class="sl">Aktiva mål</div><div class="sv">3</div></div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+    <button class="back-btn" onclick="navigate('page-profile')"><i class="ti ti-arrow-left"></i> Tillbaka</button>
+    <div class="page-title" style="flex:1;margin:0">Statistik</div>
   </div>
+  <div class="chart-pills" style="margin-bottom:6px">
+    <button class="chart-pill" onclick="setStatsRange(this,4)">1 mån</button>
+    <button class="chart-pill active" onclick="setStatsRange(this,12)">3 mån</button>
+    <button class="chart-pill" onclick="setStatsRange(this,52)">År</button>
+  </div>
+
+  <div class="chart-card">
+    <div id="stats-strength-header" style="display:flex;justify-content:space-between;align-items:start">
+      <div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:2px">Total volym (styrka)</div>
+        <div id="stats-strength-value" style="font-size:20px;font-weight:800">–</div>
+      </div>
+      <select id="stats-exercise-picker" class="field-select" style="width:auto;padding:6px 10px;font-size:11px;display:none" onchange="renderStatsPage()"></select>
+    </div>
+    <canvas id="c-strength" height="108" style="margin-top:10px"></canvas>
+  </div>
+
+  <div class="chart-card">
+    <div style="font-size:13px;font-weight:700;margin-bottom:2px">Distans (kondition)</div>
+    <div id="stats-distance-value" style="font-size:20px;font-weight:800">–</div>
+    <canvas id="c-distance" height="108" style="margin-top:10px"></canvas>
+  </div>
+
+  <div class="chart-card">
+    <div style="font-size:13px;font-weight:700;margin-bottom:2px">Pass per vecka</div>
+    <div id="stats-passcount-value" style="font-size:20px;font-weight:800">–</div>
+    <canvas id="c-passcount" height="108" style="margin-top:10px"></canvas>
+  </div>
+
+  <div class="stats-grid" id="stats-summary-grid"></div>
+  <div id="stats-empty" style="display:none;text-align:center;color:var(--text-3);font-size:13px;padding:24px;background:var(--surface);border-radius:var(--r);border:0.5px solid var(--border)">📊 Logga några pass för att se trender och statistik här.</div>
 </div>
 
 <!-- COACH -->
@@ -556,12 +581,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <!-- PROFIL -->
 <div class="page" id="page-profile">
   <div style="display:flex;align-items:center;gap:13px;padding:4px 2px 8px">
-    <div class="avatar-xl" id="p-avatar">EK</div>
+    <div class="avatar-xl" id="p-avatar">E</div>
     <div style="flex:1;min-width:0">
-      <div style="font-size:18px;font-weight:800">Erik</div>
+      <div style="font-size:18px;font-weight:800" id="profile-name">Erik</div>
       <div style="font-size:11px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="profile-user-email">Inte inloggad</div>
-      <div style="font-size:12px;color:var(--text-2);margin-top:2px">42 år · 82 kg · 183 cm</div>
-      <div style="margin-top:5px;display:flex;gap:5px"><span class="tag tag-strength">Mellannivå</span><span class="tag tag-cardio">47 pass</span></div>
+      <div style="font-size:12px;color:var(--text-2);margin-top:2px" id="profile-info">– år · – kg · – cm</div>
+      <div style="margin-top:5px;display:flex;gap:5px"><span class="tag tag-strength" id="profile-level">Nivå</span><span class="tag tag-cardio" id="profile-passcount">0 pass</span></div>
     </div>
   </div>
   <button class="btn-ghost" onclick="logout()" style="border-color:var(--border);color:var(--text-2)"><i class="ti ti-logout"></i> Logga ut</button>
@@ -992,9 +1017,26 @@ function renderProfileUser(){
   if(el&&currentUser){el.textContent=currentUser.email||'';}
   // Uppdatera avatar-knappens initial
   const avatar=document.getElementById('profile-btn');
-  if(avatar&&currentUser?.email){
-    avatar.textContent=currentUser.email[0].toUpperCase();
-  }
+  const initial=(userProfile?.name||currentUser?.email||'?')[0].toUpperCase();
+  if(avatar) avatar.textContent=initial;
+  const xlAvatar=document.getElementById('p-avatar');
+  if(xlAvatar) xlAvatar.textContent=initial;
+}
+
+function renderProfileInfo(){
+  const nameEl=document.getElementById('profile-name');
+  if(nameEl) nameEl.textContent=userProfile.name||'Du';
+  const parts=[];
+  if(userProfile.age) parts.push(`${userProfile.age} år`);
+  if(userProfile.weightKg) parts.push(`${userProfile.weightKg} kg`);
+  if(userProfile.heightCm) parts.push(`${userProfile.heightCm} cm`);
+  const infoEl=document.getElementById('profile-info');
+  if(infoEl) infoEl.textContent=parts.length?parts.join(' · '):'Fyll i din profil';
+  const levelMap={beginner:'Nybörjare',intermediate:'Mellannivå',advanced:'Avancerad'};
+  const levelEl=document.getElementById('profile-level');
+  if(levelEl) levelEl.textContent=levelMap[userProfile.level||'beginner']||'Nybörjare';
+  const passEl=document.getElementById('profile-passcount');
+  if(passEl) passEl.textContent=`${workoutHistory.length} pass`;
 }
 
 /* ========== SUPABASE SYNC ========== */
@@ -1163,7 +1205,7 @@ async function loadFromCloud(silent){
     }));
     saveState();
     // Refresh alla vyer
-    renderHomeHero();renderHomeStats();renderStreak();renderCalendar();renderWeekSchedule();renderPassList();renderExercises();renderGoals();
+    renderHomeHero();renderHomeStats();renderStreak();renderProfileInfo();renderCalendar();renderWeekSchedule();renderPassList();renderExercises();renderGoals();
     if(!silent) setSyncStatus('✓ Hämtat från molnet '+new Date().toLocaleTimeString('sv-SE'),'ok');
     return true;
   }catch(e){
@@ -1447,12 +1489,12 @@ function navigate(id){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const m={'page-home':'nav-home','page-plan':'nav-plan','page-log':'nav-home','page-history':'nav-history','page-coach':'nav-coach','page-profile':'nav-home','page-stats':'nav-home'};
   if(m[id]) document.getElementById(m[id])?.classList.add('active');
-  if(id==='page-stats') setTimeout(drawCharts,50);
+  if(id==='page-stats') setTimeout(renderStatsPage,50);
   if(id==='page-home'){renderHomeHero();renderHomeStats();renderStreak();}
   if(id==='page-plan'){renderWeekSchedule();renderCalendar();}
   if(id==='page-log') renderLogPassList();
   if(id==='page-history') renderHistory();
-  if(id==='page-profile') renderLastSync();
+  if(id==='page-profile'){renderProfileInfo();renderLastSync();}
   window.scrollTo(0,0);
 }
 
@@ -2330,9 +2372,10 @@ function finishLog(){
     }))
   });
   saveState();
-  // Uppdatera stats + streak baserat på nya passet
+  // Uppdatera stats + streak + profil-passcount baserat på nya passet
   renderHomeStats();
   renderStreak();
+  renderProfileInfo();
   clearInterval(timerInterval);
   document.getElementById('log-active').style.display='none';
   document.getElementById('log-select').style.display='flex';
@@ -2473,6 +2516,55 @@ function renderHomeStats(){
       <div class="sl">Snittkänsla 30 dgr</div>
       <div class="st" style="color:var(--text-3)">${last30.filter(w=>w.feel).length} skattningar</div>
     </div>`;
+}
+
+function calcLongestStreak(){
+  const dates=Array.from(new Set(workoutHistory.filter(w=>w.date).map(w=>{
+    const d=new Date(w.date);d.setHours(0,0,0,0);return d.getTime();
+  }))).sort((a,b)=>a-b);
+  if(!dates.length) return 0;
+  let max=1,cur=1;
+  for(let i=1;i<dates.length;i++){
+    const diff=(dates[i]-dates[i-1])/86400000;
+    if(diff===1){cur++;if(cur>max) max=cur;}
+    else if(diff>1){cur=1;}
+  }
+  return max;
+}
+
+// Returnerar array med statistik per vecka, senaste N veckor (äldst först)
+function getWeeklyStats(weeks){
+  const result=[];
+  for(let i=weeks-1;i>=0;i--){
+    const end=getDaysAgo(i*7);
+    const start=getDaysAgo((i+1)*7);
+    const w=getWorkoutsInPeriod(start,end);
+    result.push({
+      start,end,
+      count:w.length,
+      volume:calcVolume(w),
+      distance:calcDistance(w),
+      feel:calcAvgFeel(w)
+    });
+  }
+  return result;
+}
+
+// Hitta tunga "PR-värden" för en namngiven övning över tid (för 1RM-graf)
+function getExerciseProgressData(exerciseName){
+  const samples=[];
+  workoutHistory.forEach(w=>{
+    if(!w.date) return;
+    (w.exercises||[]).forEach(ex=>{
+      if(ex.name!==exerciseName) return;
+      const sets=(ex.sets||[]).filter(s=>s.done&&s.w>0&&s.r>0);
+      if(!sets.length) return;
+      // Epley-formel för 1RM: w * (1 + r/30)
+      const max1RM=Math.max(...sets.map(s=>s.w*(1+s.r/30)));
+      samples.push({date:new Date(w.date),value:max1RM});
+    });
+  });
+  return samples.sort((a,b)=>a.date-b.date);
 }
 
 function renderStreak(){
@@ -3074,14 +3166,109 @@ function closeModal(id){document.getElementById(id).classList.remove('show');}
 function closeBg(e,id){if(e.target.id===id) closeModal(id);}
 
 /* ========== CHARTS ========== */
-function setRange(el){document.querySelectorAll('.chart-pill').forEach(p=>p.classList.remove('active'));el.classList.add('active');drawCharts();}
-function drawCharts(){
+let statsRangeWeeks=12;
+
+function setStatsRange(el,weeks){
+  document.querySelectorAll('.chart-pill').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  statsRangeWeeks=weeks;
+  renderStatsPage();
+}
+
+function renderStatsPage(){
   const dark=currentTheme==='dark';
   const tc=dark?'#a5a29a':'#68655c',gc=dark?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.05)';
-  line('c-bench',[64,65,67,67,68,70,72,72],['Mar','','','Apr','','','Maj',''],'#e8440a',tc,gc);
-  line('c-run',[30.2,29.8,29.1,28.5,28.0,27.5,27.2],['v1','v2','v3','v4','v5','v6','v7'],'#00c896',tc,gc);
-  bar('c-vol',[3,4,5,3,4,5,4,3,5,4,5,3],'#5b52f0',tc,gc);
+  const emptyEl=document.getElementById('stats-empty');
+  if(!workoutHistory.length){
+    if(emptyEl) emptyEl.style.display='block';
+    // Töm grafer + summering
+    ['c-strength','c-distance','c-passcount'].forEach(id=>{
+      const c=document.getElementById(id);if(c){c.getContext('2d').clearRect(0,0,c.width,c.height);}
+    });
+    ['stats-strength-value','stats-distance-value','stats-passcount-value'].forEach(id=>{
+      const e=document.getElementById(id);if(e) e.textContent='–';
+    });
+    document.getElementById('stats-summary-grid').innerHTML='';
+    return;
+  }
+  if(emptyEl) emptyEl.style.display='none';
+
+  const weekly=getWeeklyStats(statsRangeWeeks);
+  const labels=weekly.map((_,i)=>i%Math.ceil(statsRangeWeeks/6)===0?`v${weekly[i].start.getDate()}/${weekly[i].start.getMonth()+1}`:'');
+
+  // ── STYRKA-GRAF ──
+  // Pick exercise: dropdown med strength-övningar som har data
+  const picker=document.getElementById('stats-exercise-picker');
+  const strengthExNames=Array.from(new Set(workoutHistory.flatMap(w=>
+    (w.exercises||[]).filter(e=>e.cat!=='cardio'&&e.cat!=='mobility'&&(e.sets||[]).some(s=>s.done&&s.w>0)).map(e=>e.name)
+  )));
+  let selectedEx='__volume__';
+  if(strengthExNames.length){
+    if(picker.options.length-1!==strengthExNames.length){
+      picker.innerHTML='<option value="__volume__">Total volym/vecka</option>'+strengthExNames.map(n=>`<option value="${n}">${n} (1RM)</option>`).join('');
+    }
+    picker.style.display='block';
+    selectedEx=picker.value||'__volume__';
+  }else{
+    picker.style.display='none';
+  }
+  if(selectedEx==='__volume__'){
+    const data=weekly.map(w=>w.volume/1000); // ton
+    const headerEl=document.getElementById('stats-strength-value');
+    const latest=data.at(-1)||0;
+    const prev=data.at(-2)||0;
+    const diff=latest-prev;
+    headerEl.innerHTML=`${latest.toFixed(1).replace('.',',')} <span style="font-size:11px;color:var(--text-3)">t denna v</span> ${prev>0?`<span style="font-size:11px;color:${diff>=0?'var(--accent-3)':'#e8200a'};font-weight:800">${diff>=0?'+':''}${diff.toFixed(1).replace('.',',')}t</span>`:''}`;
+    line('c-strength',data,labels,'#5b52f0',tc,gc,v=>v.toFixed(1));
+  }else{
+    const samples=getExerciseProgressData(selectedEx);
+    // Filtrera till statsRangeWeeks
+    const cutoff=getDaysAgo(statsRangeWeeks*7);
+    const filtered=samples.filter(s=>s.date>=cutoff);
+    if(filtered.length<2){
+      const headerEl=document.getElementById('stats-strength-value');
+      headerEl.innerHTML=`<span style="font-size:13px;color:var(--text-3)">För få datapunkter för ${selectedEx}</span>`;
+      const c=document.getElementById('c-strength');c.getContext('2d').clearRect(0,0,c.width,c.height);
+    }else{
+      const data=filtered.map(s=>s.value);
+      const dataLabels=filtered.map((s,i)=>i%Math.ceil(filtered.length/6)===0?`${s.date.getDate()}/${s.date.getMonth()+1}`:'');
+      const latest=data.at(-1);
+      const first=data[0];
+      const diff=latest-first;
+      const headerEl=document.getElementById('stats-strength-value');
+      headerEl.innerHTML=`${Math.round(latest)} <span style="font-size:11px;color:var(--text-3)">kg (1RM est)</span> <span style="font-size:11px;color:${diff>=0?'var(--accent-3)':'#e8200a'};font-weight:800">${diff>=0?'+':''}${Math.round(diff)}kg</span>`;
+      line('c-strength',data,dataLabels,'#e8440a',tc,gc,v=>Math.round(v));
+    }
+  }
+
+  // ── DISTANS-GRAF ──
+  const distData=weekly.map(w=>w.distance);
+  const distLatest=distData.at(-1)||0;
+  const distTotal=distData.reduce((a,b)=>a+b,0);
+  document.getElementById('stats-distance-value').innerHTML=`${distLatest.toFixed(1).replace('.',',')} <span style="font-size:11px;color:var(--text-3)">km denna v · ${distTotal.toFixed(1).replace('.',',')} km totalt</span>`;
+  if(distTotal>0) line('c-distance',distData,labels,'#00c896',tc,gc,v=>v.toFixed(1));
+  else{const c=document.getElementById('c-distance');c.getContext('2d').clearRect(0,0,c.width,c.height);}
+
+  // ── PASS-COUNT-GRAF ──
+  const countData=weekly.map(w=>w.count);
+  const avgCount=countData.reduce((a,b)=>a+b,0)/countData.length;
+  document.getElementById('stats-passcount-value').innerHTML=`${avgCount.toFixed(1).replace('.',',')} <span style="font-size:11px;color:var(--text-3)">snitt/vecka · ${weekly.at(-1).count} denna v</span>`;
+  bar('c-passcount',countData,'#f5a800',tc,gc);
+
+  // ── SUMMERING ──
+  const totalPass=workoutHistory.length;
+  const longest=calcLongestStreak();
+  const totalFeel=calcAvgFeel(workoutHistory);
+  const goals=userGoals.length;
+  document.getElementById('stats-summary-grid').innerHTML=`
+    <div class="stat-card"><div class="sl">Totalt pass</div><div class="sv">${totalPass}</div></div>
+    <div class="stat-card"><div class="sl">Längsta streak</div><div class="sv">${longest}<span> d</span></div></div>
+    <div class="stat-card"><div class="sl">Snittkänsla</div><div class="sv">${totalFeel?totalFeel.toFixed(1).replace('.',','):'–'}<span> ${totalFeel?['😩','😐','🙂','💪','🔥'][Math.max(0,Math.min(4,Math.round(totalFeel)-1))]:''}</span></div></div>
+    <div class="stat-card"><div class="sl">Aktiva mål</div><div class="sv">${goals}</div></div>`;
 }
+
+// Bakåtkompabel alias för gamla anrop
+function drawCharts(){renderStatsPage();}
 function line(id,data,labels,color,tc,gc){
   const c=document.getElementById(id);if(!c)return;
   const ctx=c.getContext('2d'),dpr=window.devicePixelRatio||1;
@@ -3179,6 +3366,7 @@ saveState();
 populateExModal();
 updateThemeUI();
 renderGoals();
+renderProfileInfo();
 renderHomeHero();
 renderHomeStats();
 renderStreak();
