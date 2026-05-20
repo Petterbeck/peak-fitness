@@ -1076,8 +1076,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
     <!-- VY 1: Upload -->
     <div id="exa-view-upload">
-      <div class="modal-title">AI-analys av övning</div>
-      <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Ladda upp en video (5–30 sek) eller en bild av övningen. AI föreslår namn, muskelgrupp och taggar — du verifierar innan det fylls i.</div>
+      <div class="modal-title" id="exa-modal-title">AI-analys av övning</div>
+      <div id="exa-modal-desc" style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Ladda upp en video (5–30 sek) eller en bild av övningen. AI föreslår namn, muskelgrupp och taggar — du verifierar innan det fylls i.</div>
       <div style="display:flex;flex-direction:column;gap:12px">
         <div>
           <label class="field-label">Video eller bild</label>
@@ -1772,16 +1772,29 @@ function tryRepairTruncatedJson(s){
 
 /* ========== EXERCISE AI-ANALYS (4.3 Steg A) ========== */
 // State för analys-modalen. Lever bara så länge modalen är öppen.
-let exaState=null; // {frames:[Blob], primaryFile:File, suggestion:object|null}
+// mode='create' (ny övning, AI föreslår allt) eller mode='tutorial' (befintlig övning, AI ger bara utförande-tips)
+let exaState=null; // {frames:[Blob], primaryFile:File, suggestion:object|null, mode:'create'|'tutorial'}
 
 function openExAnalyze(){
-  exaState=null;
+  // Detektera läge baserat på om vi redigerar en befintlig övning
+  const mode=editingExId?'tutorial':'create';
+  exaState={frames:[],primaryFile:null,suggestion:null,mode};
   document.getElementById('exa-file').value='';
   document.getElementById('exa-file-status').textContent='';
   document.getElementById('exa-preview-wrap').style.display='none';
   document.getElementById('exa-preview-grid').innerHTML='';
   document.getElementById('exa-preview-content').innerHTML='';
   document.getElementById('exa-analyze-btn').disabled=true;
+  // Uppdatera modal-titel och beskrivning beroende på läge
+  const titleEl=document.getElementById('exa-modal-title');
+  const descEl=document.getElementById('exa-modal-desc');
+  if(mode==='tutorial'){
+    if(titleEl) titleEl.textContent='AI-analys av utförande';
+    if(descEl) descEl.textContent='Ladda upp video/bild av övningen — AI föreslår en utförande-beskrivning. Övningens namn, muskelgrupp och fält ändras INTE.';
+  }else{
+    if(titleEl) titleEl.textContent='AI-analys av övning';
+    if(descEl) descEl.textContent='Ladda upp en video (5–30 sek) eller en bild av övningen. AI föreslår namn, muskelgrupp och taggar — du verifierar innan det fylls i.';
+  }
   showExaView('upload');
   openModal('m-ex-analyze');
 }
@@ -1799,39 +1812,39 @@ async function onExAnalyzeFileChange(input){
   const status=document.getElementById('exa-file-status');
   const grid=document.getElementById('exa-preview-grid');
   const wrap=document.getElementById('exa-preview-wrap');
+  // Behåll mode från openExAnalyze
+  const currentMode=exaState?.mode||(editingExId?'tutorial':'create');
   status.style.color='var(--text-2)';
   status.textContent='⏳ Bearbetar…';
   grid.innerHTML='';
   wrap.style.display='none';
   document.getElementById('exa-analyze-btn').disabled=true;
-  exaState=null;
+  exaState={frames:[],primaryFile:null,suggestion:null,mode:currentMode};
   try{
     const isVideo=file.type.startsWith('video/');
     const isImage=file.type.startsWith('image/');
-    if(!isVideo&&!isImage) throw new Error('Endast video och bild stöds');
+    if(!isVideo&&!isImage) throw new Error(`Endast video och bild stöds (filtyp: ${file.type||'okänd'})`);
     const sizeMb=(file.size/1048576).toFixed(2);
     if(isImage){
-      // Bild → max 3 MB (Vercel body-limit)
       if(file.size>3*1024*1024) throw new Error(`Bilden är för stor (${sizeMb} MB) — max 3 MB. Komprimera först.`);
       const url=URL.createObjectURL(file);
       grid.innerHTML=`<img src="${url}" style="width:100%;grid-column:span 5;border-radius:var(--r-sm);max-height:200px;object-fit:contain;background:var(--surface-2)">`;
       wrap.style.display='block';
-      exaState={frames:[file],primaryFile:file};
+      exaState={frames:[file],primaryFile:file,suggestion:null,mode:currentMode};
       status.style.color='var(--accent-3)';
       status.textContent=`✓ Bild redo — klicka "Analysera"`;
     }else{
-      // Video → max 50 MB original (vi extraherar bara 5 frames som skickas till AI)
       if(file.size>50*1024*1024) throw new Error(`Videon är för stor (${sizeMb} MB) — max 50 MB.`);
-      status.textContent=`⏳ Extraherar 5 stillbilder från ${file.name}…`;
+      status.textContent=`⏳ Extraherar 5 stillbilder från ${file.name} (${sizeMb} MB)…`;
+      console.log('Video info:',{name:file.name,type:file.type,size:file.size});
       const frames=await extractFramesFromVideo(file,5);
-      if(!frames.length) throw new Error('Kunde inte extrahera bilder från videon');
-      // Visa frames som thumbnails
+      if(!frames.length) throw new Error('Kunde inte extrahera bilder från videon (kanske ovanligt format eller codec — försök med en kortare video från Foton/Files)');
       grid.innerHTML=frames.map(blob=>{
         const url=URL.createObjectURL(blob);
         return `<img src="${url}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:4px;background:var(--surface-2)">`;
       }).join('');
       wrap.style.display='block';
-      exaState={frames,primaryFile:file};
+      exaState={frames,primaryFile:file,suggestion:null,mode:currentMode};
       status.style.color='var(--accent-3)';
       status.textContent=`✓ ${frames.length} stillbilder extraherade — klicka "Analysera"`;
     }
@@ -1840,7 +1853,7 @@ async function onExAnalyzeFileChange(input){
     console.error('Ex-analyze fil-fel:',e);
     status.style.color='#e8200a';
     status.textContent='❌ '+e.message;
-    exaState=null;
+    exaState={frames:[],primaryFile:null,suggestion:null,mode:currentMode};
   }
 }
 
@@ -1857,34 +1870,49 @@ async function extractFramesFromVideo(file,numFrames=5){
   try{
     await new Promise((res,rej)=>{
       const ok=()=>res();
-      const fail=()=>rej(new Error('Kunde inte läsa videon (formatet stöds kanske inte)'));
+      const fail=ev=>{
+        const errCode=video.error?.code;
+        const errMsg=video.error?.message||'';
+        // MediaError-koder: 1=ABORTED, 2=NETWORK, 3=DECODE, 4=SRC_NOT_SUPPORTED
+        const codeLabels={1:'Avbruten',2:'Nätverksfel',3:'Avkodning misslyckades (codec stöds inte)',4:'Källan stöds inte'};
+        const label=codeLabels[errCode]||'okänt fel';
+        rej(new Error(`Kunde inte läsa videon — ${label}${errMsg?': '+errMsg:''}. Codec eller container stöds kanske inte av webbläsaren.`));
+      };
       video.addEventListener('loadedmetadata',ok,{once:true});
       video.addEventListener('error',fail,{once:true});
-      setTimeout(()=>rej(new Error('Tog för lång tid att läsa videons metadata')),15000);
+      setTimeout(()=>rej(new Error('Tog för lång tid att läsa videons metadata (timeout 15s). Kan vara H.265/HEVC som inte stöds av Chrome.')),15000);
     });
     const duration=video.duration;
-    if(!duration||!isFinite(duration)||duration<=0) throw new Error('Kunde inte avgöra videolängd');
+    const vw=video.videoWidth,vh=video.videoHeight;
+    console.log('Video metadata:',{duration,videoWidth:vw,videoHeight:vh});
+    if(!duration||!isFinite(duration)||duration<=0) throw new Error(`Kunde inte avgöra videolängd (duration=${duration}). Kan vara fragmented MP4 eller livestream-format.`);
+    if(!vw||!vh) throw new Error(`Videon har inga visuella spår (width=${vw}, height=${vh}). Är det möjligen en ljudfil med .mp4-ändelse?`);
     const canvas=document.createElement('canvas');
     const MAX_DIM=720;
-    const vw=video.videoWidth||640,vh=video.videoHeight||480;
     const scale=Math.min(1,MAX_DIM/Math.max(vw,vh));
     canvas.width=Math.round(vw*scale);
     canvas.height=Math.round(vh*scale);
     const ctx=canvas.getContext('2d');
     const frames=[];
     for(let i=0;i<numFrames;i++){
-      // Sample mellan 10% och 90% av videon (undvik svarta start/slut-rutor)
       const t=numFrames===1?duration*0.5:(0.1+(0.8*i/(numFrames-1)))*duration;
-      video.currentTime=Math.min(t,duration-0.01);
-      await new Promise((res,rej)=>{
-        video.addEventListener('seeked',res,{once:true});
-        setTimeout(()=>rej(new Error(`Timeout vid seek till ${t.toFixed(1)}s`)),5000);
-      });
+      const seekTime=Math.min(t,duration-0.01);
+      video.currentTime=seekTime;
+      try{
+        await new Promise((res,rej)=>{
+          video.addEventListener('seeked',res,{once:true});
+          setTimeout(()=>rej(new Error(`Timeout vid seek till ${seekTime.toFixed(2)}s (efter 5s)`)),5000);
+        });
+      }catch(seekErr){
+        console.warn('Seek misslyckades:',seekErr.message);
+        continue; // hoppa över denna frame, fortsätt med nästa
+      }
       ctx.drawImage(video,0,0,canvas.width,canvas.height);
       const blob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',0.8));
       if(blob) frames.push(blob);
     }
     cleanup();
+    if(!frames.length) throw new Error('Inga frames kunde extraheras — seek misslyckades på alla punkter');
     return frames;
   }catch(e){
     cleanup();
@@ -1895,7 +1923,34 @@ async function extractFramesFromVideo(file,numFrames=5){
 async function analyzeExerciseMedia(){
   if(!exaState||!exaState.frames.length){alert('Ladda upp en fil först');return;}
   showExaView('loading');
-  const systemPrompt=`Du är expert på träning och övningsanalys. Användaren har skickat in stillbilder från en träningsvideo (eller en enskild bild). Analysera vad övningen är och föreslå metadata.
+  const mode=exaState.mode||'create';
+  let systemPrompt,userInstr;
+  if(mode==='tutorial'){
+    // Befintlig övning — AI ska bara ge tutorial/utförande-info, INTE ändra namn/muskel/sets/reps
+    const ex=findExercise(editingExId);
+    const exName=ex?.name||'(okänt namn)';
+    const exMuscle=ex?.muscle||'';
+    const exForm=ex?.primaryForm||'';
+    systemPrompt=`Du analyserar en träningsvideo/bild för att skapa en utförande-beskrivning. Övningen är REDAN definierad med namn och kategori — du ska INTE föreslå nytt namn eller ändra övningstyp, bara ge en bra utförande-beskrivning.
+
+Returnera ENBART giltig JSON i exakt detta format:
+
+{
+  "note": "Tydlig utförande-beskrivning på svenska (2-4 meningar). Var konkret om kroppsposition, andning, vanliga misstag att undvika.",
+  "match": true|false,
+  "matchComment": "Tom sträng om match=true. Om match=false: kort förklaring av vad du faktiskt ser i bilderna istället."
+}
+
+Riktlinjer:
+- note: praktiskt och tydligt, ex: "Stå med fötterna axelbrett, håll skivstången över ryggen. Sänk höften bakåt som om du ska sätta dig på en stol — håll bröstet upp och knäna i linje med tårna. Andas in på vägen ner, andas ut på vägen upp. Vanligt misstag: knäna kollapsar inåt."
+- match: true om videon/bilden verkligen visar övningen vid det angivna namnet, false om något helt annat visas
+- matchComment: bara fyll i om match=false ("Detta ser ut att vara bänkpress, inte ${exName}")
+
+KRITISKT - JSON-format: endast giltig JSON, dubbla citattecken, inga trailing commas, ingen markdown.`;
+    userInstr=`Den befintliga övningen heter "${exName}"${exMuscle?` (muskelgrupp: ${exMuscle})`:''}${exForm?` (träningsform: ${exForm})`:''}. Analysera ${exaState.frames.length>1?'dessa stillbilder från en träningsvideo':'denna bild'} och föreslå en utförande-beskrivning enligt JSON-formatet. Bekräfta också att det stämmer med övningsnamnet.`;
+  }else{
+    // Skapa ny övning — AI föreslår allt
+    systemPrompt=`Du är expert på träning och övningsanalys. Användaren har skickat in stillbilder från en träningsvideo (eller en enskild bild). Analysera vad övningen är och föreslå metadata för en NY övning i deras träningsapp.
 
 Returnera ENBART giltig JSON i exakt detta format:
 
@@ -1908,7 +1963,7 @@ Returnera ENBART giltig JSON i exakt detta format:
   "defaultSets": number,
   "defaultReps": number,
   "suggestedWeight": number eller null,
-  "note": "Kort tips om form/utförande (1-2 meningar på svenska)"
+  "note": "Tydlig utförande-beskrivning (2-4 meningar på svenska)"
 }
 
 Riktlinjer:
@@ -1917,14 +1972,15 @@ Riktlinjer:
 - För egen vikt (chins, dips, push-ups, plankor): primaryForm=bodyweight, useBodyweight=true
 - För löpning/cykling: primaryForm=running eller cycling
 - För stretches, yoga, rörlighet: primaryForm=mobility
-- defaultSets/defaultReps: rimliga utgångsvärden (t.ex. 3×8 för tunga lyft, 3×12 för mindre, 4×10 för isolation)
-- suggestedWeight: lämna null om svårt att gissa, annars en mellan-tung default (t.ex. 50 kg för knäböj som vägledning)
-- note: konkret om utförandet, inte allmänt prat ("Håll bålen spänd, dra hakan inåt")
+- defaultSets/defaultReps: rimliga utgångsvärden (3×8 tunga lyft, 3×12 mindre, 4×10 isolation)
+- suggestedWeight: lämna null om svårt att gissa
+- note: konkret om utförandet inkl vanliga misstag
 
-KRITISKT - JSON-format:
-- Endast giltig JSON, inget annat — ingen markdown, inga code fences, ingen text utanför objektet
-- Dubbla citattecken runt strängar
-- Inga trailing commas`;
+KRITISKT - JSON-format: endast giltig JSON, dubbla citattecken, inga trailing commas, ingen markdown.`;
+    userInstr=exaState.frames.length>1
+      ?'Analysera dessa stillbilder från en träningsvideo och föreslå metadata enligt JSON-formatet i system-prompten. Bilderna är tagna i tidsordning.'
+      :'Analysera denna bild av en träningsövning och föreslå metadata enligt JSON-formatet i system-prompten.';
+  }
   try{
     const blocks=[];
     for(const frame of exaState.frames){
@@ -1938,12 +1994,7 @@ KRITISKT - JSON-format:
         }
       });
     }
-    blocks.push({
-      type:'text',
-      text:exaState.frames.length>1
-        ?'Analysera dessa stillbilder från en träningsvideo och föreslå metadata enligt JSON-formatet i system-prompten. Bilderna är tagna i tidsordning.'
-        :'Analysera denna bild av en träningsövning och föreslå metadata enligt JSON-formatet i system-prompten.'
-    });
+    blocks.push({type:'text',text:userInstr});
     const messages=[{role:'user',content:blocks}];
     const result=await callClaude(messages,{system:systemPrompt,max_tokens:1024});
     const sug=parseClaudeJson(result.text);
@@ -1959,31 +2010,50 @@ KRITISKT - JSON-format:
 
 function renderExAnalyzePreview(){
   const s=exaState.suggestion;
-  const subTagsStr=(s.subTags||[]).join(', ')||'<span style="color:var(--text-3)">(inga)</span>';
-  const primaryFormLabel={strength:'Styrka',bodyweight:'Egen vikt',running:'Löpning',cycling:'Cykling',mobility:'Rörlighet',other:'Övrigt',group:'Grupp'}[s.primaryForm]||s.primaryForm||'?';
-  document.getElementById('exa-preview-content').innerHTML=`
-    <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">
-      <div>
-        <div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Föreslaget namn</div>
-        <div style="font-size:17px;font-weight:800">${escapeHtml(s.name||'(okänt)')}</div>
+  const mode=exaState.mode||'create';
+  if(mode==='tutorial'){
+    // Bara utförande-beskrivning + matchnings-bekräftelse
+    const ex=findExercise(editingExId);
+    const exName=ex?.name||'(okänd)';
+    const match=s.match!==false; // default true om saknas
+    const matchBox=match
+      ?`<div class="notice" style="background:rgba(67,160,71,0.08);border-color:var(--accent-3);color:var(--accent-3);font-size:12px">✓ AI bekräftar: detta ser ut att vara "${escapeHtml(exName)}"</div>`
+      :`<div class="notice" style="background:rgba(232,32,10,0.08);border-color:#e8200a;color:#e8200a;font-size:12px"><b>⚠️ Varning:</b> ${escapeHtml(s.matchComment||'Detta ser inte ut att matcha övningen.')}</div>`;
+    document.getElementById('exa-preview-content').innerHTML=`
+      ${matchBox}
+      <div class="card" style="padding:14px;margin-top:8px">
+        <div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase;margin-bottom:6px">Föreslagen utförande-beskrivning</div>
+        <div style="font-size:14px;line-height:1.55;font-style:italic;background:var(--surface-2);padding:10px 12px;border-radius:6px">"${escapeHtml(s.note||'(ingen beskrivning)')}"</div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Träningsform</div><div style="font-size:14px">${escapeHtml(primaryFormLabel)}</div></div>
-        <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Muskelgrupp</div><div style="font-size:14px">${escapeHtml(s.muscle||'?')}</div></div>
+      <div class="notice" style="font-size:11px;margin-top:8px">💡 Bara anteckningsfältet uppdateras — namn, muskelgrupp, sets/reps lämnas orörda.</div>
+    `;
+  }else{
+    const subTagsStr=(s.subTags||[]).join(', ')||'<span style="color:var(--text-3)">(inga)</span>';
+    const primaryFormLabel={strength:'Styrka',bodyweight:'Egen vikt',running:'Löpning',cycling:'Cykling',mobility:'Rörlighet',other:'Övrigt',group:'Grupp'}[s.primaryForm]||s.primaryForm||'?';
+    document.getElementById('exa-preview-content').innerHTML=`
+      <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">
+        <div>
+          <div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Föreslaget namn</div>
+          <div style="font-size:17px;font-weight:800">${escapeHtml(s.name||'(okänt)')}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Träningsform</div><div style="font-size:14px">${escapeHtml(primaryFormLabel)}</div></div>
+          <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Muskelgrupp</div><div style="font-size:14px">${escapeHtml(s.muscle||'?')}</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Sets</div><div style="font-size:14px">${s.defaultSets??'?'}</div></div>
+          <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Reps</div><div style="font-size:14px">${s.defaultReps??'?'}</div></div>
+          <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Vikt-tips</div><div style="font-size:14px">${s.suggestedWeight?s.suggestedWeight+' kg':'–'}</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Egen vikt</div><div style="font-size:14px">${s.useBodyweight?'Ja':'Nej'}</div></div>
+          <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Sub-typ</div><div style="font-size:13px">${subTagsStr}</div></div>
+        </div>
+        ${s.note?`<div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Tips/anteckning</div><div style="font-size:13px;font-style:italic;line-height:1.5;background:var(--surface-2);padding:8px 10px;border-radius:6px">"${escapeHtml(s.note)}"</div></div>`:''}
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-        <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Sets</div><div style="font-size:14px">${s.defaultSets??'?'}</div></div>
-        <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Reps</div><div style="font-size:14px">${s.defaultReps??'?'}</div></div>
-        <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Vikt-tips</div><div style="font-size:14px">${s.suggestedWeight?s.suggestedWeight+' kg':'–'}</div></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Egen vikt</div><div style="font-size:14px">${s.useBodyweight?'Ja':'Nej'}</div></div>
-        <div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Sub-typ</div><div style="font-size:13px">${subTagsStr}</div></div>
-      </div>
-      ${s.note?`<div><div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase">Tips/anteckning</div><div style="font-size:13px;font-style:italic;line-height:1.5;background:var(--surface-2);padding:8px 10px;border-radius:6px">"${escapeHtml(s.note)}"</div></div>`:''}
-    </div>
-    <div class="notice" style="font-size:11px;margin-top:8px">💡 Du kan justera allt efter du klickat "Använd förslagen" — fälten i övnings-formuläret fylls i.</div>
-  `;
+      <div class="notice" style="font-size:11px;margin-top:8px">💡 Du kan justera allt efter du klickat "Använd förslagen" — fälten i övnings-formuläret fylls i.</div>
+    `;
+  }
 }
 
 // Minimal HTML-escape så AI-strängar inte kan injicera DOM
@@ -1994,7 +2064,17 @@ function escapeHtml(s){
 function applyExAnalyze(){
   if(!exaState||!exaState.suggestion){closeModal('m-ex-analyze');return;}
   const s=exaState.suggestion;
-  // Sätt primaryForm FÖRST — det avgör vilka fält som blir synliga
+  const mode=exaState.mode||'create';
+  // I tutorial-läge: bara uppdatera anteckningsfältet, rör inget annat
+  if(mode==='tutorial'){
+    if(s.note){
+      const noteField=document.getElementById('ex-f-note');
+      noteField.value=s.note;
+    }
+    closeModal('m-ex-analyze');
+    return;
+  }
+  // Skapa-läge: fyll alla fält
   const pf=s.primaryForm||'strength';
   if(typeof setExPrimary==='function') setExPrimary(pf);
   if(s.name) document.getElementById('ex-f-name').value=s.name;
