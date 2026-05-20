@@ -688,13 +688,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Ladda upp en fil eller klistra in text. AI tolkar och föreslår pass + övningar — du verifierar innan import.</div>
       <div style="display:flex;flex-direction:column;gap:12px">
         <div>
-          <label class="field-label">Ladda upp fil (PDF / Excel / CSV / text)</label>
+          <label class="field-label">Ladda upp fil (PDF / bild / Excel / CSV / text)</label>
           <div id="imp-file-zone" onclick="document.getElementById('imp-file').click()" style="border:2px dashed var(--border-md);border-radius:var(--r);padding:18px 12px;text-align:center;cursor:pointer;transition:all 0.18s;background:var(--surface)">
             <div style="font-size:28px;line-height:1;margin-bottom:6px"><i class="ti ti-upload" style="color:var(--accent-4)"></i></div>
             <div style="font-size:13px;font-weight:700;margin-bottom:2px">Klicka, dra eller klistra in fil</div>
-            <div style="font-size:11px;color:var(--text-3)">PDF, Excel, CSV, text</div>
+            <div style="font-size:11px;color:var(--text-3)">PDF, JPG/PNG, Excel, CSV, text · max 3 MB</div>
           </div>
-          <input type="file" id="imp-file" accept=".pdf,.xlsx,.xls,.csv,.txt,text/*" onchange="onImportFileChange(this)" style="display:none">
+          <input type="file" id="imp-file" accept=".pdf,.xlsx,.xls,.csv,.txt,image/*,text/*" onchange="onImportFileChange(this)" style="display:none">
           <div id="imp-file-status" style="font-size:11px;color:var(--text-2);margin-top:6px;min-height:14px;text-align:center"></div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:11px;font-weight:700">
@@ -1248,12 +1248,17 @@ function renderProfileInfo(){
 /* ========== PROGRAM-IMPORT (AI) ========== */
 let importedData=null;
 
+// Lagrar uppladdad PDF/bild som base64 så AI kan tolka filen direkt (utan text-extraktion i frontend)
+let importAttachment=null; // {type:'document'|'image', mediaType, base64, name, sizeMb}
+
 function openImportProgram(){
   document.getElementById('imp-text').value='';
+  document.getElementById('imp-text').placeholder='T.ex.:\n\nLSK Slalom-program\n\nPASS 1 - Styrka A\n- Knäböj 5x5 80 kg\n- Marklyft 3x5 100 kg\n- Bulgarian split squat 3x10\n\nPASS 2 - Intervaller\n- 8x400m i Z4 med 90s vila';
   document.getElementById('imp-prefix').value='';
   document.getElementById('imp-tag').value='';
   document.getElementById('imp-file-status').textContent='';
   document.getElementById('imp-file').value='';
+  importAttachment=null;
   showImpView('input');
   setupImportDropAndPaste();
   openModal('m-import-program');
@@ -1316,33 +1321,73 @@ async function onImportFileChange(input){
   const status=document.getElementById('imp-file-status');
   if(!file) return;
   const name=file.name;
-  const sizeKb=(file.size/1024).toFixed(1);
+  const sizeBytes=file.size;
+  const sizeMb=(sizeBytes/1048576).toFixed(2);
   status.style.color='var(--text-2)';
-  status.textContent=`⏳ Läser ${name} (${sizeKb} KB)…`;
+  status.textContent=`⏳ Läser ${name} (${sizeMb} MB)…`;
+  importAttachment=null;
   try{
     const ext=name.split('.').pop().toLowerCase();
-    let text='';
-    if(ext==='pdf'){
-      text=await extractPdfText(file);
-    }else if(ext==='xlsx'||ext==='xls'||ext==='csv'){
-      text=await extractSpreadsheetText(file);
-    }else if(ext==='txt'||file.type.startsWith('text/')){
-      text=await file.text();
+    const isPdf=ext==='pdf'||file.type==='application/pdf';
+    const isImage=file.type.startsWith('image/');
+    const isExcel=ext==='xlsx'||ext==='xls';
+    const isCsv=ext==='csv';
+    const isText=ext==='txt'||file.type.startsWith('text/');
+
+    if(isPdf||isImage){
+      // AI tolkar filen direkt — vi skickar base64. Vercel Hobby har 4.5 MB body-gräns och base64 ökar storlek ~33%, så vi sätter 3 MB-tak.
+      const MAX_BYTES=3*1024*1024;
+      if(sizeBytes>MAX_BYTES){
+        throw new Error(`Filen är för stor (${sizeMb} MB) — max 3 MB stöds. Komprimera PDF:en (t.ex. ilovepdf.com) eller dela upp den.`);
+      }
+      const base64=await fileToBase64(file);
+      importAttachment={
+        type:isPdf?'document':'image',
+        mediaType:isPdf?'application/pdf':file.type,
+        base64,
+        name,
+        sizeMb
+      };
+      // Töm textarea och uppdatera placeholder så det blir tydligt att den är frivillig
+      document.getElementById('imp-text').value='';
+      document.getElementById('imp-text').placeholder='Extra instruktioner till AI (frivilligt). T.ex. "Skippa uppvärmningsdelen, jag har egen rutin" eller "Bara veckorna 1-4"';
+      status.style.color='var(--accent-3)';
+      const icon=isPdf?'📄':'🖼️';
+      status.textContent=`${icon} ${name} (${sizeMb} MB) redo — AI tolkar filen direkt`;
+    }else if(isExcel||isCsv){
+      const text=(await extractSpreadsheetText(file)).trim();
+      if(!text) throw new Error('Filen verkar tom — klistra in manuellt istället.');
+      document.getElementById('imp-text').value=text;
+      status.style.color='var(--accent-3)';
+      status.textContent=`✓ ${name} läst — ${text.length} tecken. Granska i textrutan och tryck "Analysera".`;
+    }else if(isText){
+      const text=(await file.text()).trim();
+      if(!text) throw new Error('Filen verkar tom.');
+      document.getElementById('imp-text').value=text;
+      status.style.color='var(--accent-3)';
+      status.textContent=`✓ ${name} läst — ${text.length} tecken. Granska i textrutan och tryck "Analysera".`;
     }else{
-      throw new Error('Filtyp som stöds: PDF, Excel (.xlsx/.xls), CSV, eller text');
+      throw new Error('Filtyper som stöds: PDF, JPG/PNG, Excel (.xlsx/.xls), CSV, text');
     }
-    text=text.trim();
-    if(!text){
-      throw new Error('Filen verkar tom eller skannad (ingen text hittades). Klistra in manuellt istället.');
-    }
-    document.getElementById('imp-text').value=text;
-    const charCount=text.length;
-    status.style.color='var(--accent-3)';
-    status.textContent=`✓ ${name} läst — ${charCount} tecken extraherade. Granska i textrutan och tryck "Analysera".`;
   }catch(e){
     status.style.color='#e8200a';
     status.textContent=`❌ ${e.message}`;
+    importAttachment=null;
   }
+}
+
+// Läs fil som base64 (utan data:URL-prefix) — AI behöver bara payload-delen
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>{
+      const result=String(reader.result||'');
+      const comma=result.indexOf(',');
+      resolve(comma>=0?result.slice(comma+1):result);
+    };
+    reader.onerror=()=>reject(new Error('Kunde inte läsa filen'));
+    reader.readAsDataURL(file);
+  });
 }
 
 async function extractPdfText(file){
@@ -1391,9 +1436,21 @@ async function analyzeImport(){
   const text=document.getElementById('imp-text').value.trim();
   const prefix=document.getElementById('imp-prefix').value.trim();
   const tag=document.getElementById('imp-tag').value.trim();
-  if(!text){alert('Klistra in programmet först');return;}
+  if(!text&&!importAttachment){alert('Klistra in programmet eller ladda upp en fil först');return;}
   showImpView('loading');
-  const systemPrompt=`Du är expert på att tolka träningsprogram. Användaren har klistrat in ett program och du ska strukturera det till JSON för en träningsapp.
+  const systemPrompt=`Du är expert på att tolka träningsprogram. Användaren har skickat in ett dokument (PDF, bild, eller text) och du ska strukturera det till JSON för en träningsapp.
+
+VAD SKA IGNORERAS:
+- Inledande brödtext, träningsfilosofi, allmänna råd
+- Förklaringar av zoner, pulsintervaller eller principer (om de inte är del av ett specifikt pass)
+- Information om coach, kontaktuppgifter, försättssidor
+- Periodiseringsförklaringar, allmän bakgrundsinfo
+- Repetitiva eller skissartade övergripande veckoöversikter (ta hellre med ENSKILDA pass)
+
+VAD SKA EXTRAHERAS:
+- Konkreta träningspass med namn (om de finns)
+- Övningar i passet med set, reps, vikt, distans, tid där det framgår
+- Pulszoner när de är specificerade per övning (Z1-Z5)
 
 KRITISKT - JSON-format:
 - Returnera ENBART giltig JSON, inget annat. Ingen markdown, inga code fences, inga kommentarer, ingen text före/efter.
@@ -1435,7 +1492,28 @@ Viktigt:
 - Översätt övningar till svenska om de är på annat språk
 - Om en övning är "8x400m" → sets=8, distance=0.4, time=null, primaryForm=running, muscle=Kondition`;
   try{
-    const result=await callClaude(text,{system:systemPrompt,max_tokens:8192});
+    // Bygg messages — om en fil är uppladdad skickar vi den som document/image-block
+    let messages;
+    if(importAttachment){
+      const blocks=[
+        {
+          type:importAttachment.type, // 'document' eller 'image'
+          source:{
+            type:'base64',
+            media_type:importAttachment.mediaType,
+            data:importAttachment.base64
+          }
+        }
+      ];
+      const instr=text
+        ?`Strukturera detta träningsprogram till JSON enligt formatet i system-prompten. Ignorera inledande brödtext och förklaringar — extrahera bara konkreta pass och övningar.\n\nExtra instruktioner från användaren: ${text}`
+        :'Strukturera detta träningsprogram till JSON enligt formatet i system-prompten. Ignorera inledande brödtext och förklaringar — extrahera bara konkreta pass och övningar.';
+      blocks.push({type:'text',text:instr});
+      messages=[{role:'user',content:blocks}];
+    }else{
+      messages=[{role:'user',content:text}];
+    }
+    const result=await callClaude(messages,{system:systemPrompt,max_tokens:8192});
     const data=parseClaudeJson(result.text);
     if(!data.passes||!Array.isArray(data.passes)||!data.passes.length){
       throw new Error('AI:n returnerade inga pass — kontrollera programtexten och försök igen');
