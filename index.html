@@ -588,6 +588,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div style="font-size:12px;color:var(--text-2);margin-top:2px" id="profile-info">– år · – kg · – cm</div>
       <div style="margin-top:5px;display:flex;gap:5px"><span class="tag tag-strength" id="profile-level">Nivå</span><span class="tag tag-cardio" id="profile-passcount">0 pass</span></div>
     </div>
+    <button class="btn-sm" onclick="openEditProfile()" style="background:var(--surface-2);color:var(--text-1);align-self:flex-start" title="Redigera profil"><i class="ti ti-edit"></i></button>
   </div>
   <button class="btn-ghost" onclick="logout()" style="border-color:var(--border);color:var(--text-2)"><i class="ti ti-logout"></i> Logga ut</button>
   <button class="btn-ghost" onclick="navigate('page-stats')"><i class="ti ti-chart-line"></i> Visa statistik</button>
@@ -652,6 +653,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div><label class="field-label">Ikon</label><input class="field-input" id="nf-icon" placeholder="🚴" value="💪"></div>
       <div><label class="field-label">Kategori</label><select class="field-select" id="nf-cat"><option value="strength">Styrketräning</option><option value="cardio">Kondition</option><option value="bodyweight">Egen vikt</option><option value="mobility">Rörlighet/Yoga</option></select></div>
       <button class="btn-primary" onclick="addForm()"><i class="ti ti-check"></i> Skapa</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="m-edit-profile" onclick="closeBg(event,'m-edit-profile')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Redigera profil</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div><label class="field-label">Namn</label><input class="field-input" id="pe-name" placeholder="Ditt namn"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div><label class="field-label">Ålder</label><input class="field-input" id="pe-age" type="number" min="1" max="120" placeholder="–"></div>
+        <div><label class="field-label">Vikt kg</label><input class="field-input" id="pe-weight" type="number" min="1" step="0.5" placeholder="–"></div>
+        <div><label class="field-label">Längd cm</label><input class="field-input" id="pe-height" type="number" min="1" placeholder="–"></div>
+      </div>
+      <div>
+        <label class="field-label">Träningsnivå</label>
+        <div class="chip-row" id="pe-level-chips" style="flex-wrap:wrap;gap:5px"></div>
+      </div>
+      <div class="notice" style="font-size:11px;line-height:1.5">💡 Vikten används för "egen vikt"-övningar — den autofylls automatiskt när du loggar.</div>
+      <button class="btn-primary" onclick="saveProfile()"><i class="ti ti-check"></i> Spara</button>
     </div>
   </div>
 </div>
@@ -1023,6 +1044,46 @@ function renderProfileUser(){
   if(xlAvatar) xlAvatar.textContent=initial;
 }
 
+let pendingLevel=null;
+const LEVEL_OPTIONS=[
+  {id:'beginner',label:'Nybörjare'},
+  {id:'intermediate',label:'Mellannivå'},
+  {id:'advanced',label:'Avancerad'}
+];
+
+function openEditProfile(){
+  document.getElementById('pe-name').value=userProfile.name||'';
+  document.getElementById('pe-age').value=userProfile.age||'';
+  document.getElementById('pe-weight').value=userProfile.weightKg||'';
+  document.getElementById('pe-height').value=userProfile.heightCm||'';
+  pendingLevel=userProfile.level||'beginner';
+  const chips=document.getElementById('pe-level-chips');
+  chips.innerHTML=LEVEL_OPTIONS.map(l=>`<button class="filter-chip ${pendingLevel===l.id?'active':''}" data-level="${l.id}" onclick="setProfileLevel('${l.id}',this)">${l.label}</button>`).join('');
+  openModal('m-edit-profile');
+}
+
+function setProfileLevel(id,btn){
+  document.querySelectorAll('#pe-level-chips .filter-chip').forEach(c=>c.classList.remove('active'));
+  btn.classList.add('active');
+  pendingLevel=id;
+}
+
+function saveProfile(){
+  userProfile.name=document.getElementById('pe-name').value.trim()||'Du';
+  const ageVal=document.getElementById('pe-age').value;
+  const wVal=document.getElementById('pe-weight').value;
+  const hVal=document.getElementById('pe-height').value;
+  userProfile.age=ageVal?parseInt(ageVal):null;
+  userProfile.weightKg=wVal?parseFloat(wVal):null;
+  userProfile.heightCm=hVal?parseFloat(hVal):null;
+  userProfile.level=pendingLevel||'beginner';
+  saveState();
+  closeModal('m-edit-profile');
+  renderProfileInfo();
+  renderProfileUser(); // uppdaterar avatar
+  renderHomeHero();    // uppdaterar Hem (om namn används där)
+}
+
 function renderProfileInfo(){
   const nameEl=document.getElementById('profile-name');
   if(nameEl) nameEl.textContent=userProfile.name||'Du';
@@ -1090,6 +1151,19 @@ async function syncToCloud(silent){
     saveState();
 
     const uid=currentUser.id;
+    // Steg 1b: Push profile
+    if(userProfile){
+      const {error}=await supa.from('profiles').upsert({
+        id:uid,
+        email:currentUser.email||null,
+        name:userProfile.name||null,
+        age:userProfile.age||null,
+        weight_kg:userProfile.weightKg||null,
+        height_cm:userProfile.heightCm||null,
+        level:userProfile.level||'beginner'
+      });
+      if(error) console.warn('Profile sync failed:',error);
+    }
     // Steg 2: Push training_forms
     if(trainingForms.length){
       const {error}=await supa.from('training_forms').upsert(trainingForms.map(tf=>({
@@ -1165,14 +1239,26 @@ async function loadFromCloud(silent){
   if(!supa||!currentUser){if(!silent) setSyncStatus('Inte inloggad','err');return false;}
   if(!silent) setSyncStatus('Hämtar från molnet...');
   try{
-    const [tfRes,exRes,ptRes,pwRes,whRes]=await Promise.all([
+    const [tfRes,exRes,ptRes,pwRes,whRes,prRes]=await Promise.all([
       supa.from('training_forms').select('*'),
       supa.from('exercises').select('*'),
       supa.from('pass_types').select('*'),
       supa.from('planned_workouts').select('*'),
-      supa.from('workout_history').select('*').order('performed_at',{ascending:false})
+      supa.from('workout_history').select('*').order('performed_at',{ascending:false}),
+      supa.from('profiles').select('*').eq('id',currentUser.id).maybeSingle()
     ]);
     if(tfRes.error) throw tfRes.error;
+    // Profil — hämta in om finns
+    if(prRes&&prRes.data){
+      const p=prRes.data;
+      userProfile={
+        name:p.name||userProfile.name,
+        age:p.age||userProfile.age,
+        weightKg:p.weight_kg||userProfile.weightKg,
+        heightCm:p.height_cm||userProfile.heightCm,
+        level:p.level||userProfile.level||'beginner'
+      };
+    }
     const cloudTfs=tfRes.data||[],cloudExs=exRes.data||[],cloudPts=ptRes.data||[];
     if(cloudTfs.length===0&&cloudExs.length===0){
       if(!silent) setSyncStatus('Molnet är tomt — använd "Synka till molnet" först','err');
@@ -1433,7 +1519,7 @@ const STORAGE_KEY_LEGACY='alpinfys_v1';
 function saveState(){
   try{
     localStorage.setItem(STORAGE_KEY,JSON.stringify({
-      trainingForms,userGoals,workoutHistory,exercises,plannedWorkouts,theme:currentTheme,v:2
+      trainingForms,userGoals,workoutHistory,exercises,plannedWorkouts,userProfile,theme:currentTheme,v:2
     }));
   }catch(e){console.warn('Save failed:',e);}
   // Auto-sync till molnet (debounced, tyst i bakgrunden)
@@ -1459,6 +1545,7 @@ function loadState(){
     if(Array.isArray(s.workoutHistory)) workoutHistory=s.workoutHistory;
     if(Array.isArray(s.exercises)) exercises=s.exercises;
     if(Array.isArray(s.plannedWorkouts)) plannedWorkouts=s.plannedWorkouts;
+    if(s.userProfile&&typeof s.userProfile==='object') userProfile={...userProfile,...s.userProfile};
     if(s.theme){
       currentTheme=s.theme;
       document.getElementById('app').setAttribute('data-theme',currentTheme);
