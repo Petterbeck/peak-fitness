@@ -364,6 +364,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn-primary" onclick="openNewPass()" style="flex:1;min-width:160px"><i class="ti ti-plus"></i> Nytt träningspass</button>
         <button class="btn-ghost" onclick="openImportProgram()" style="flex:1;min-width:140px;font-size:12px;font-weight:700;color:var(--accent-4);border-color:var(--accent-4)"><i class="ti ti-sparkles"></i> Importera (AI)</button>
+        <button class="btn-ghost" onclick="openScheduleProgram()" style="flex:1;min-width:160px;font-size:12px;font-weight:700;color:var(--accent-3);border-color:var(--accent-3)"><i class="ti ti-calendar-plus"></i> Schemalägg program</button>
         <button class="btn-ghost" onclick="openModal('m-add-form')" style="flex:1;min-width:130px;font-size:12px;font-weight:700"><i class="ti ti-folder-plus"></i> Ny träningsform</button>
       </div>
       <input class="search-bar" id="pass-search" placeholder="Sök pass..." oninput="renderPassList()">
@@ -746,6 +747,34 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <button class="btn-primary" onclick="confirmImport()" style="width:100%"><i class="ti ti-check"></i> Importera valda pass</button>
     </div>
 
+  </div>
+</div>
+
+<!-- Schemalägg ett helt program i kalendern -->
+<div class="modal" id="m-schedule-program" onclick="closeBg(event,'m-schedule-program')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Schemalägg program i kalender</div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Välj en tagg (från ett importerat program) och fördela passen automatiskt över valda veckodagar. Passen roteras cykliskt i den ordning de finns i listan.</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label class="field-label">Program-tagg</label>
+        <select class="field-select" id="sp-tag" onchange="updateScheduleProgramPreview()"></select>
+        <div id="sp-pass-preview" style="font-size:11px;color:var(--text-2);margin-top:6px"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><label class="field-label">Startdatum</label><input class="field-input" id="sp-start-date" type="date" onchange="updateScheduleProgramPreview()"></div>
+        <div><label class="field-label">Antal veckor</label><input class="field-input" id="sp-weeks" type="number" value="8" min="1" max="52" onchange="updateScheduleProgramPreview()"></div>
+      </div>
+      <div>
+        <label class="field-label">Veckodagar (klicka för att välja)</label>
+        <div id="sp-weekdays" class="chip-row" style="gap:5px"></div>
+      </div>
+      <div class="notice" id="sp-summary" style="font-size:12px;line-height:1.5"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="confirmScheduleProgram()" style="flex:1"><i class="ti ti-calendar-check"></i> Schemalägg</button>
+        <button class="btn-ghost" onclick="closeModal('m-schedule-program')">Avbryt</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -2557,6 +2586,135 @@ function renderImportPreview(){
     </div>`;
   }).join('');
   document.getElementById('imp-preview-list').innerHTML=html;
+}
+
+/* ========== SCHEMALÄGG PROGRAM ========== */
+// Hitta alla unika "program-taggar" från passen, exklusive system-tags (gym, styrka osv).
+function getProgramTags(){
+  const systemTags=new Set((FORM_TAGS||[]).map(t=>t.id||t));
+  const counts={}; // tag → antal pass
+  trainingForms.forEach(tf=>{
+    (tf.passTypes||[]).forEach(pt=>{
+      (pt.formTags||[]).forEach(t=>{
+        if(systemTags.has(t)) return;
+        counts[t]=(counts[t]||0)+1;
+      });
+    });
+  });
+  // Returnera bara tags som finns på minst 2 pass (program = grupp av pass)
+  return Object.entries(counts).filter(([_,n])=>n>=2).sort((a,b)=>b[1]-a[1]).map(([t,n])=>({tag:t,count:n}));
+}
+
+// Hämta alla pass som har en specifik tagg
+function getPassesByTag(tag){
+  const result=[];
+  trainingForms.forEach(tf=>{
+    (tf.passTypes||[]).forEach(pt=>{
+      if((pt.formTags||[]).includes(tag)) result.push({pass:pt,form:tf});
+    });
+  });
+  return result;
+}
+
+const SP_WEEKDAYS=[
+  {id:1,name:'Mån'},{id:2,name:'Tis'},{id:3,name:'Ons'},{id:4,name:'Tor'},{id:5,name:'Fre'},{id:6,name:'Lör'},{id:0,name:'Sön'}
+];
+let spSelectedDays=new Set([1,3,5]); // default Mån/Ons/Fre
+
+function openScheduleProgram(){
+  const tags=getProgramTags();
+  const select=document.getElementById('sp-tag');
+  if(!tags.length){
+    alert('Inga programtaggar hittades. Importera ett program med en tagg (t.ex. "Lidingö Slalom") för att kunna schemalägga det.');
+    return;
+  }
+  select.innerHTML=tags.map(t=>`<option value="${escapeHtml(t.tag)}">${escapeHtml(t.tag)} (${t.count} pass)</option>`).join('');
+  // Default startdatum = imorgon
+  const tom=new Date();tom.setDate(tom.getDate()+1);
+  document.getElementById('sp-start-date').value=tom.toISOString().slice(0,10);
+  document.getElementById('sp-weeks').value=8;
+  spSelectedDays=new Set([1,3,5]);
+  renderSpWeekdays();
+  updateScheduleProgramPreview();
+  openModal('m-schedule-program');
+}
+
+function renderSpWeekdays(){
+  const c=document.getElementById('sp-weekdays');
+  c.innerHTML=SP_WEEKDAYS.map(d=>`<button type="button" class="filter-chip ${spSelectedDays.has(d.id)?'active':''}" onclick="toggleSpDay(${d.id})">${d.name}</button>`).join('');
+}
+
+function toggleSpDay(id){
+  if(spSelectedDays.has(id)) spSelectedDays.delete(id);
+  else spSelectedDays.add(id);
+  renderSpWeekdays();
+  updateScheduleProgramPreview();
+}
+
+function updateScheduleProgramPreview(){
+  const tag=document.getElementById('sp-tag').value;
+  const weeks=parseInt(document.getElementById('sp-weeks').value)||1;
+  const startStr=document.getElementById('sp-start-date').value;
+  const passes=tag?getPassesByTag(tag):[];
+  const passPrev=document.getElementById('sp-pass-preview');
+  if(passes.length){
+    passPrev.innerHTML=`<b>${passes.length} pass</b> i programmet: ${passes.map(p=>escapeHtml(p.pass.name)).slice(0,5).join(', ')}${passes.length>5?'…':''}`;
+  }else{
+    passPrev.innerHTML='';
+  }
+  const summary=document.getElementById('sp-summary');
+  if(!tag||!passes.length||!startStr||!spSelectedDays.size){
+    summary.innerHTML='⏳ Välj tag, startdatum och minst en veckodag.';
+    return;
+  }
+  const totalSessions=weeks*spSelectedDays.size;
+  summary.innerHTML=`📅 Skapar <b>${totalSessions} planerade pass</b> under ${weeks} veckor (${spSelectedDays.size} dagar/vecka). Passen roteras cykliskt — totalt ${Math.ceil(totalSessions/passes.length)} varv genom programmet.`;
+}
+
+function confirmScheduleProgram(){
+  const tag=document.getElementById('sp-tag').value;
+  const weeks=parseInt(document.getElementById('sp-weeks').value)||1;
+  const startStr=document.getElementById('sp-start-date').value;
+  if(!tag||!startStr||!spSelectedDays.size){
+    alert('Fyll i tag, startdatum och minst en veckodag');
+    return;
+  }
+  const passes=getPassesByTag(tag);
+  if(!passes.length){alert('Inga pass hittades med taggen "'+tag+'"');return;}
+  // Generera datum
+  const startDate=new Date(startStr+'T00:00:00');
+  if(isNaN(startDate.getTime())){alert('Ogiltigt startdatum');return;}
+  const endDate=new Date(startDate);
+  endDate.setDate(endDate.getDate()+weeks*7-1);
+  const dates=[];
+  const cur=new Date(startDate);
+  while(cur<=endDate){
+    if(spSelectedDays.has(cur.getDay())){
+      dates.push(cur.toISOString().slice(0,10));
+    }
+    cur.setDate(cur.getDate()+1);
+  }
+  if(!dates.length){alert('Inga datum genererades — kontrollera startdatum och veckodagar');return;}
+  // Skapa plannedWorkouts genom att rotera genom passen
+  let added=0;
+  dates.forEach((iso,i)=>{
+    const {pass,form}=passes[i%passes.length];
+    plannedWorkouts.push({
+      id:crypto.randomUUID(),
+      date:iso,
+      passId:pass.id,
+      formId:form.id,
+      notes:''
+    });
+    added++;
+  });
+  saveState();
+  closeModal('m-schedule-program');
+  alert(`✅ ${added} pass schemalagda från ${startStr} till ${endDate.toISOString().slice(0,10)}.\n\nKolla i Schema-fliken eller på Hem-sidan för att se dem.`);
+  // Uppdatera vyer som kan visa nya planerade pass
+  if(typeof renderCalendar==='function') renderCalendar();
+  if(typeof renderHomeHero==='function') renderHomeHero();
+  if(typeof renderWeekSchedule==='function') renderWeekSchedule();
 }
 
 async function confirmImport(){
