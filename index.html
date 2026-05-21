@@ -2720,7 +2720,9 @@ function confirmScheduleProgram(){
 async function confirmImport(){
   if(!importedData) return;
   const {data,tag}=importedData;
-  let passCount=0,newExCount=0,reusedExCount=0;
+  // Om importen kom från YouTube-länk(ar): mappa pass-index → video-URL så övningarna får tutorial-länk
+  const ytVideos=(importAttachment?.type==='youtube'&&importAttachment.videos)?importAttachment.videos:null;
+  let passCount=0,newExCount=0,reusedExCount=0,videoUrlsApplied=0;
   let lastFormId=null;
   for(let i=0;i<data.passes.length;i++){
     const inc=document.getElementById('imp-include-'+i)?.checked;
@@ -2729,6 +2731,8 @@ async function confirmImport(){
     const passName=document.getElementById('imp-name-'+i).value.trim()||p.name;
     let formIdChoice=document.getElementById('imp-form-'+i).value;
     const pfChoice=document.getElementById('imp-primary-'+i).value;
+    // Hämta video-URL för exakt detta pass (om YouTube-import)
+    const videoUrlForPass=ytVideos?(ytVideos[i%ytVideos.length]?.sourceUrl||null):null;
     // Skapa ny träningsform om valt
     let form;
     if(formIdChoice==='__new__'){
@@ -2770,14 +2774,20 @@ async function confirmImport(){
           note:exData.note||'',
           fav:false,
           mediaUrl:null,
-          videoUrl:null
+          videoUrl:videoUrlForPass||null
         };
+        if(videoUrlForPass) videoUrlsApplied++;
         exercises.push(ex);
         newExCount++;
       }else{
         reusedExCount++;
         if(tag&&!(ex.customTags||[]).includes(tag)){
           ex.customTags=[...(ex.customTags||[]),tag];
+        }
+        // Lägg tutorial-länk på återanvänd övning bara om den saknar — skriv inte över befintlig
+        if(videoUrlForPass&&!ex.videoUrl){
+          ex.videoUrl=videoUrlForPass;
+          videoUrlsApplied++;
         }
       }
       // Set/reps på ref tas från importerad data
@@ -2801,7 +2811,8 @@ async function confirmImport(){
   importedData=null;
   renderPassList();
   renderExercises();
-  alert(`✅ Klart!\n\n${passCount} pass importerade\n${newExCount} nya övningar i banken${reusedExCount>0?`\n${reusedExCount} övningar matchade befintliga`:''}`);
+  const videoLine=videoUrlsApplied>0?`\n🎬 Tutorial-länk satt på ${videoUrlsApplied} övning${videoUrlsApplied>1?'ar':''}`:'';
+  alert(`✅ Klart!\n\n${passCount} pass importerade\n${newExCount} nya övningar i banken${reusedExCount>0?`\n${reusedExCount} övningar matchade befintliga`:''}${videoLine}`);
 }
 
 /* ========== CLAUDE API TEST ========== */
