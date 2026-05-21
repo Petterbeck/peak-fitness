@@ -722,7 +722,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div><label class="field-label">Prefix (på pass-namn)</label><input class="field-input" id="imp-prefix" placeholder="T.ex. LSK"></div>
-          <div><label class="field-label">Tagg (sökbar)</label><input class="field-input" id="imp-tag" placeholder="T.ex. Lidingö Slalom"></div>
+          <div><label class="field-label">Taggar (sökbara, komma-separerat)</label><input class="field-input" id="imp-tag" placeholder="T.ex. Lidingö Slalom, utegym"></div>
         </div>
         <div class="notice" style="font-size:11px;line-height:1.5">💡 Prefix sätts framför varje pass-namn (LSK - Styrka A). Taggen blir custom-tag på pass och övningar så du kan filtrera.</div>
         <button class="btn-primary" onclick="analyzeImport()"><i class="ti ti-sparkles"></i> Analysera med AI</button>
@@ -951,6 +951,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div><label class="field-label">Taggar</label>
         <div class="chip-row" id="ep-form-tags" style="flex-wrap:wrap;gap:5px"></div>
       </div>
+      <div><label class="field-label">Egna taggar (utrustning/plats, komma-separerat)</label><input class="field-input" id="ep-custom" placeholder="t.ex. utegym, hantlar, funktionsband"></div>
       <div style="display:flex;gap:8px">
         <button class="btn-primary" onclick="savePassEdit()" style="flex:1"><i class="ti ti-check"></i> Spara</button>
         <button class="btn-ghost" onclick="deletePass()" style="flex:0 0 auto;color:#e8200a;border-color:#e8200a44"><i class="ti ti-trash"></i></button>
@@ -970,6 +971,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div><label class="field-label">Taggar (typ av pass — välj flera)</label>
         <div class="chip-row" id="np-form-tags" style="flex-wrap:wrap;gap:5px"></div>
       </div>
+      <div><label class="field-label">Egna taggar (utrustning/plats, komma-separerat)</label><input class="field-input" id="np-custom" placeholder="t.ex. utegym, hantlar, funktionsband"></div>
       <button class="btn-primary" onclick="addPassFromNew()"><i class="ti ti-check"></i> Skapa pass</button>
     </div>
   </div>
@@ -2590,14 +2592,21 @@ function renderImportPreview(){
 
 /* ========== SCHEMALÄGG PROGRAM ========== */
 // Hitta alla unika "program-taggar" från passen, exklusive system-tags (gym, styrka osv).
+// Prioriterar customTags (råa, t.ex. "Lidingö Slalom") men inkluderar även icke-system formTags (bakåtkompat).
 function getProgramTags(){
   const systemTags=new Set((FORM_TAGS||[]).map(t=>t.id||t));
   const counts={}; // tag → antal pass
   trainingForms.forEach(tf=>{
     (tf.passTypes||[]).forEach(pt=>{
+      const seen=new Set();
+      (pt.customTags||[]).forEach(t=>{if(t&&!seen.has(t)){counts[t]=(counts[t]||0)+1;seen.add(t);}});
+      // Fallback: formTags som inte är system-tags och inte redan räknade (för pass importerade innan customTags fanns)
       (pt.formTags||[]).forEach(t=>{
-        if(systemTags.has(t)) return;
-        counts[t]=(counts[t]||0)+1;
+        if(systemTags.has(t)||seen.has(t)) return;
+        // Hoppa över slugified dubblett om customTags redan har rå-versionen
+        const raw=(pt.customTags||[]).some(ct=>ct.toLowerCase().replace(/\s+/g,'-')===t);
+        if(raw) return;
+        counts[t]=(counts[t]||0)+1;seen.add(t);
       });
     });
   });
@@ -2605,12 +2614,15 @@ function getProgramTags(){
   return Object.entries(counts).filter(([_,n])=>n>=2).sort((a,b)=>b[1]-a[1]).map(([t,n])=>({tag:t,count:n}));
 }
 
-// Hämta alla pass som har en specifik tagg
+// Hämta alla pass som har en specifik tagg (matchar både customTags och formTags)
 function getPassesByTag(tag){
+  const slug=tag.toLowerCase().replace(/\s+/g,'-');
   const result=[];
   trainingForms.forEach(tf=>{
     (tf.passTypes||[]).forEach(pt=>{
-      if((pt.formTags||[]).includes(tag)) result.push({pass:pt,form:tf});
+      const inCustom=(pt.customTags||[]).includes(tag);
+      const inForm=(pt.formTags||[]).includes(tag)||(pt.formTags||[]).includes(slug);
+      if(inCustom||inForm) result.push({pass:pt,form:tf});
     });
   });
   return result;
@@ -2720,6 +2732,8 @@ function confirmScheduleProgram(){
 async function confirmImport(){
   if(!importedData) return;
   const {data,tag}=importedData;
+  // Stödjer flera taggar (komma-separerat). Behåll tag (string) för visning, parsa tags (array) för applicering.
+  const tags=(tag||'').split(',').map(s=>s.trim()).filter(Boolean);
   // Om importen kom från YouTube-länk(ar): mappa pass-index → video-URL så övningarna får tutorial-länk
   const ytVideos=(importAttachment?.type==='youtube'&&importAttachment.videos)?importAttachment.videos:null;
   let passCount=0,newExCount=0,reusedExCount=0,videoUrlsApplied=0;
@@ -2770,7 +2784,7 @@ async function confirmImport(){
           defaultTime:exData.time||null,
           formTags:inferFormTags(isCardio?'cardio':isBw?'bodyweight':'strength',form.cat),
           subTags:p.subTags||[],
-          customTags:tag?[tag]:[],
+          customTags:[...tags],
           note:exData.note||'',
           fav:false,
           mediaUrl:null,
@@ -2781,9 +2795,10 @@ async function confirmImport(){
         newExCount++;
       }else{
         reusedExCount++;
-        if(tag&&!(ex.customTags||[]).includes(tag)){
-          ex.customTags=[...(ex.customTags||[]),tag];
-        }
+        // Lägg till alla taggar som saknas på den återanvända övningen
+        tags.forEach(t=>{
+          if(!(ex.customTags||[]).includes(t)) ex.customTags=[...(ex.customTags||[]),t];
+        });
         // Lägg tutorial-länk på återanvänd övning bara om den saknar — skriv inte över befintlig
         if(videoUrlForPass&&!ex.videoUrl){
           ex.videoUrl=videoUrlForPass;
@@ -2795,13 +2810,14 @@ async function confirmImport(){
       const refReps=(pfChoice==='running'||pfChoice==='cycling')?(exData.time||ex.defaultReps):(exData.reps||ex.defaultReps);
       exerciseRefs.push({exId:ex.id,sets:refSets,reps:refReps});
     }
-    // Skapa pass
+    // Skapa pass — customTags=råa taggar (visas/söks), formTags=slugified (bakåtkompat med schemalägg)
     form.passTypes.push({
       id:crypto.randomUUID(),
       name:passName,
       desc:p.description||'',
       color:PRIMARY_FORM_BY_ID[pfChoice]?.color||'#5b52f0',
-      formTags:tag?[tag.toLowerCase().replace(/\s+/g,'-')]:[],
+      formTags:tags.map(t=>t.toLowerCase().replace(/\s+/g,'-')),
+      customTags:[...tags],
       exerciseRefs
     });
     passCount++;
@@ -2951,7 +2967,7 @@ async function syncToCloud(silent){
     trainingForms.forEach(tf=>tf.passTypes.forEach(pt=>allPasses.push({
       id:pt.id,user_id:uid,training_form_id:tf.id,
       name:pt.name,description:pt.desc||'',color:pt.color||'#5b52f0',
-      form_tags:pt.formTags||[],exercise_refs:pt.exerciseRefs||[]
+      form_tags:pt.formTags||[],custom_tags:pt.customTags||[],exercise_refs:pt.exerciseRefs||[]
     })));
     if(allPasses.length){
       const {error}=await supa.from('pass_types').upsert(allPasses);
@@ -3073,7 +3089,7 @@ async function loadFromCloud(silent){
       id:tf.id,name:tf.name,icon:tf.icon,cat:tf.cat,
       passTypes:cloudPts.filter(pt=>pt.training_form_id===tf.id).map(pt=>({
         id:pt.id,name:pt.name,desc:pt.description,color:pt.color,
-        formTags:pt.form_tags||[],exerciseRefs:pt.exercise_refs||[]
+        formTags:pt.form_tags||[],customTags:pt.custom_tags||[],exerciseRefs:pt.exercise_refs||[]
       }))
     }));
     exercises.length=0;
@@ -3501,7 +3517,7 @@ function renderPassList(){
     if(passFilter.form&&form.id!==passFilter.form) return false;
     if(passFilter.tag&&!(pass.formTags||[]).includes(passFilter.tag)) return false;
     if(q){
-      const hay=(pass.name+' '+(pass.desc||'')+' '+form.name+' '+(pass.formTags||[]).join(' ')).toLowerCase();
+      const hay=(pass.name+' '+(pass.desc||'')+' '+form.name+' '+(pass.formTags||[]).join(' ')+' '+(pass.customTags||[]).join(' ')).toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
@@ -3514,6 +3530,10 @@ function renderPassList(){
       const t=FORM_TAG_BY_ID[tid];if(!t) return '';
       return `<span class="tag" style="background:${t.color}22;color:${t.color}">${t.label}</span>`;
     }).join('');
+    const customPills=(pass.customTags||[]).slice(0,4).map(ct=>
+      `<span class="tag" style="background:var(--surface-2);color:var(--text-2);border:1px solid var(--border)"><i class="ti ti-tag" style="font-size:9px"></i> ${escapeHtml(ct)}</span>`
+    ).join('');
+    const allPills=tagPills+customPills;
     return `
     <div class="form-card" onclick="openDetail('${form.id}','${pass.id}')" style="cursor:pointer">
       <div class="form-card-head">
@@ -3521,7 +3541,7 @@ function renderPassList(){
         <div class="form-card-info">
           <div class="form-card-name">${pass.name}</div>
           <div class="form-card-meta">${form.name} · ${cntEx(pass)} övningar</div>
-          ${tagPills?`<div style="display:flex;gap:4px;margin-top:5px;flex-wrap:wrap">${tagPills}</div>`:''}
+          ${allPills?`<div style="display:flex;gap:4px;margin-top:5px;flex-wrap:wrap">${allPills}</div>`:''}
         </div>
         <i class="ti ti-chevron-right form-card-arrow" style="transform:none"></i>
       </div>
@@ -3554,6 +3574,7 @@ function openNewPass(){
   if(ft) ft.innerHTML=FORM_TAGS.map(t=>`<button class="filter-chip" data-tag="${t.id}" onclick="toggleExFormTag(this)">${t.label}</button>`).join('');
   document.getElementById('np-name').value='';
   document.getElementById('np-desc').value='';
+  document.getElementById('np-custom').value='';
   openModal('m-new-pass');
 }
 
@@ -3563,10 +3584,11 @@ function addPassFromNew(){
   const desc=document.getElementById('np-desc').value.trim();
   if(!formId||!name) return;
   const formTags=Array.from(document.querySelectorAll('#np-form-tags .filter-chip.active')).map(c=>c.getAttribute('data-tag'));
+  const customTags=document.getElementById('np-custom').value.split(',').map(s=>s.trim()).filter(Boolean);
   const f=trainingForms.find(x=>x.id===formId);
   if(!f) return;
   const newPassId=crypto.randomUUID();
-  f.passTypes.push({id:newPassId,name,desc,color:'#5b52f0',exerciseRefs:[],formTags});
+  f.passTypes.push({id:newPassId,name,desc,color:'#5b52f0',exerciseRefs:[],formTags,customTags});
   // Stäng new-pass-modalen ordentligt + tvinga bort den från klick-event-stacken
   closeModal('m-new-pass');
   const oldModal=document.getElementById('m-new-pass');
@@ -3599,6 +3621,7 @@ function openEditPass(){
   ms.innerHTML=trainingForms.map(f=>`<option value="${f.id}" ${f.id===r.form.id?'selected':''}>${f.icon} ${f.name}</option>`).join('');
   document.getElementById('ep-name').value=r.pass.name;
   document.getElementById('ep-desc').value=r.pass.desc||'';
+  document.getElementById('ep-custom').value=(r.pass.customTags||[]).join(', ');
   const ft=document.getElementById('ep-form-tags');
   ft.innerHTML=FORM_TAGS.map(t=>`<button class="filter-chip ${(r.pass.formTags||[]).includes(t.id)?'active':''}" data-tag="${t.id}" onclick="toggleExFormTag(this)">${t.label}</button>`).join('');
   openModal('m-edit-pass');
@@ -3612,8 +3635,9 @@ function savePassEdit(){
   const name=document.getElementById('ep-name').value.trim();
   const desc=document.getElementById('ep-desc').value.trim();
   const formTags=Array.from(document.querySelectorAll('#ep-form-tags .filter-chip.active')).map(c=>c.getAttribute('data-tag'));
+  const customTags=document.getElementById('ep-custom').value.split(',').map(s=>s.trim()).filter(Boolean);
   if(!name) return;
-  r.pass.name=name;r.pass.desc=desc;r.pass.formTags=formTags;
+  r.pass.name=name;r.pass.desc=desc;r.pass.formTags=formTags;r.pass.customTags=customTags;
   // Flytta pass om träningsform ändrats
   if(newFormId!==r.form.id){
     const newForm=trainingForms.find(f=>f.id===newFormId);
