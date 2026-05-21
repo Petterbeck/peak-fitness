@@ -2580,10 +2580,20 @@ function renderImportPreview(){
         <input type="text" class="field-input" id="imp-name-${i}" value="${(prefix?prefix+' - ':'')+p.name}" style="flex:1;font-weight:700;font-size:14px">
       </label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <select class="field-select" id="imp-form-${i}" style="font-size:12px">${setOptions}</select>
-        <select class="field-select" id="imp-primary-${i}" style="font-size:12px">${PRIMARY_FORMS.map(f=>`<option value="${f.id}" ${f.id===p.primaryForm?'selected':''}>${f.icon} ${f.label}</option>`).join('')}</select>
+        <div>
+          <div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase;margin-bottom:3px">Träningsform (mapp)</div>
+          <select class="field-select" id="imp-form-${i}" style="font-size:12px;width:100%">${setOptions}</select>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase;margin-bottom:3px">Övningstyp (styr fält)</div>
+          <select class="field-select" id="imp-primary-${i}" style="font-size:12px;width:100%">${PRIMARY_FORMS.map(f=>`<option value="${f.id}" ${f.id===p.primaryForm?'selected':''}>${f.icon} ${f.label}</option>`).join('')}</select>
+        </div>
       </div>
-      <div style="font-size:11px;color:var(--text-2);margin-bottom:6px">${(p.exercises||[]).length} övningar${tag?' · tag: '+tag:''}</div>
+      <div style="margin-bottom:8px">
+        <div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase;margin-bottom:3px">Egna taggar (sökbara, komma-separerat)</div>
+        <input type="text" class="field-input" id="imp-tags-${i}" value="${escapeHtml(tag||'')}" placeholder="t.ex. Lidingö Slalom, utegym" style="font-size:12px">
+      </div>
+      <div style="font-size:11px;color:var(--text-2);margin-bottom:6px">${(p.exercises||[]).length} övningar</div>
       <details style="margin-top:4px"><summary style="font-size:11px;cursor:pointer;color:var(--accent);user-select:none">Visa övningar (${(p.exercises||[]).length})</summary><div style="margin-top:6px">${exList}</div></details>
     </div>`;
   }).join('');
@@ -2732,8 +2742,6 @@ function confirmScheduleProgram(){
 async function confirmImport(){
   if(!importedData) return;
   const {data,tag}=importedData;
-  // Stödjer flera taggar (komma-separerat). Behåll tag (string) för visning, parsa tags (array) för applicering.
-  const tags=(tag||'').split(',').map(s=>s.trim()).filter(Boolean);
   // Om importen kom från YouTube-länk(ar): mappa pass-index → video-URL så övningarna får tutorial-länk
   const ytVideos=(importAttachment?.type==='youtube'&&importAttachment.videos)?importAttachment.videos:null;
   let passCount=0,newExCount=0,reusedExCount=0,videoUrlsApplied=0;
@@ -2745,6 +2753,8 @@ async function confirmImport(){
     const passName=document.getElementById('imp-name-'+i).value.trim()||p.name;
     let formIdChoice=document.getElementById('imp-form-'+i).value;
     const pfChoice=document.getElementById('imp-primary-'+i).value;
+    // Per-pass taggar (editerbara i preview, default = globala taggen)
+    const tags=(document.getElementById('imp-tags-'+i)?.value||tag||'').split(',').map(s=>s.trim()).filter(Boolean);
     // Hämta video-URL för exakt detta pass (om YouTube-import)
     const videoUrlForPass=ytVideos?(ytVideos[i%ytVideos.length]?.sourceUrl||null):null;
     // Skapa ny träningsform om valt
