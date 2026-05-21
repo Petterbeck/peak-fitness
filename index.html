@@ -1059,6 +1059,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         </div>
       </div>
 
+      <div>
+        <label class="field-label">Tutorial-video (YouTube/Vimeo-länk, frivilligt)</label>
+        <input class="field-input" id="ex-f-video-url" placeholder="https://www.youtube.com/watch?v=..." oninput="renderExVideoPreview(this.value)">
+        <div id="ex-video-preview"></div>
+      </div>
       <div><label class="field-label">Egna taggar (komma-separerat)</label><input class="field-input" id="ex-f-custom" placeholder="t.ex. favorit, knaeproblem"></div>
       <div><label class="field-label">Anteckning / utförande</label><input class="field-input" id="ex-f-note" placeholder="Kort beskrivning av övningen"></div>
 
@@ -1117,6 +1122,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- Video-spelare (embed YouTube/Vimeo) -->
+<div class="modal" id="m-video-player" onclick="if(event.target===this)closeVideoPlayer()">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div class="modal-title" id="vid-title" style="margin:0;flex:1;font-size:15px">Tutorial</div>
+      <button class="back-btn" onclick="closeVideoPlayer()" title="Stäng"><i class="ti ti-x"></i></button>
+    </div>
+    <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:var(--r-sm);background:#000">
+      <iframe id="vid-frame" src="" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+    </div>
   </div>
 </div>
 
@@ -2061,6 +2079,92 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// Öppna inbäddad video-spelare för en övning (från pass-detail)
+function openVideoPlayer(exId){
+  const ex=findExercise(exId);
+  if(!ex||!ex.videoUrl) return;
+  showVideoPlayer(ex.name,ex.videoUrl);
+}
+
+// Samma men från loggings-vyn där loggedExs[ei] har en kopia av videoUrl
+function openVideoPlayerFromLog(ei){
+  const item=loggedExs[ei];
+  if(!item||!item.videoUrl) return;
+  showVideoPlayer(item.name,item.videoUrl);
+}
+
+function showVideoPlayer(title,url){
+  const parsed=parseVideoUrl(url);
+  if(!parsed){alert('Kunde inte tolka video-URL:en');return;}
+  const embed=videoEmbedUrl(parsed);
+  document.getElementById('vid-title').textContent=title||'Tutorial';
+  // autoplay=1 så videon börjar direkt
+  document.getElementById('vid-frame').src=embed+(embed.includes('?')?'&':'?')+'autoplay=1';
+  openModal('m-video-player');
+}
+
+function closeVideoPlayer(){
+  // Stoppa video genom att rensa src
+  document.getElementById('vid-frame').src='';
+  closeModal('m-video-player');
+}
+
+// Tutorial-video helpers — stödjer YouTube och Vimeo i flera URL-format
+function parseVideoUrl(url){
+  if(!url||typeof url!=='string') return null;
+  const trimmed=url.trim();
+  if(!trimmed) return null;
+  // YouTube: watch?v=, youtu.be/, embed/, shorts/ — id är alltid 11 tecken
+  let m=trimmed.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+  if(m) return {provider:'youtube',id:m[1]};
+  // Vimeo: vimeo.com/123456789
+  m=trimmed.match(/vimeo\.com\/(?:video\/)?(\d{6,})/i);
+  if(m) return {provider:'vimeo',id:m[1]};
+  return null;
+}
+
+function videoEmbedUrl(parsed){
+  if(!parsed) return null;
+  if(parsed.provider==='youtube') return `https://www.youtube.com/embed/${parsed.id}`;
+  if(parsed.provider==='vimeo') return `https://player.vimeo.com/video/${parsed.id}`;
+  return null;
+}
+
+function videoThumbnailUrl(parsed){
+  if(!parsed) return null;
+  // YouTube har 4 thumbnail-storlekar — maxresdefault finns inte alltid, hqdefault funkar alltid
+  if(parsed.provider==='youtube') return `https://img.youtube.com/vi/${parsed.id}/hqdefault.jpg`;
+  // Vimeo kräver API-anrop för thumbnail — vi gör utan tills vidare
+  return null;
+}
+
+// Renderar förhandsvisning av tutorial-video i exercise-editor
+function renderExVideoPreview(url){
+  const wrap=document.getElementById('ex-video-preview');
+  if(!wrap) return;
+  const parsed=parseVideoUrl(url);
+  if(!parsed){
+    if(url&&url.trim()){
+      wrap.innerHTML=`<div style="font-size:11px;color:#e8200a;padding:6px 0">⚠️ Kunde inte tolka URL — stödjer YouTube och Vimeo</div>`;
+    }else{
+      wrap.innerHTML='';
+    }
+    return;
+  }
+  const thumb=videoThumbnailUrl(parsed);
+  const embed=videoEmbedUrl(parsed);
+  wrap.innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--surface-2);border-radius:var(--r-sm);margin-top:6px">
+      ${thumb?`<img src="${thumb}" style="width:90px;height:54px;object-fit:cover;border-radius:4px;flex-shrink:0" onerror="this.style.display='none'">`:'<div style="width:90px;height:54px;background:var(--surface);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:24px">🎬</div>'}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;color:var(--accent-3)">✓ ${parsed.provider==='youtube'?'YouTube':'Vimeo'}-video</div>
+        <div style="font-size:10px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">ID: ${parsed.id}</div>
+      </div>
+      <button type="button" class="btn-ghost" style="font-size:11px;padding:4px 8px" onclick="window.open('${embed}','_blank')">Öppna</button>
+    </div>
+  `;
+}
+
 function applyExAnalyze(){
   if(!exaState||!exaState.suggestion){closeModal('m-ex-analyze');return;}
   const s=exaState.suggestion;
@@ -2202,7 +2306,8 @@ async function confirmImport(){
           customTags:tag?[tag]:[],
           note:exData.note||'',
           fav:false,
-          mediaUrl:null
+          mediaUrl:null,
+          videoUrl:null
         };
         exercises.push(ex);
         newExCount++;
@@ -2363,7 +2468,7 @@ async function syncToCloud(silent){
         id:ex.id,user_id:uid,name:ex.name,muscle:ex.muscle,
         form_tags:ex.formTags||[],custom_tags:ex.customTags||[],
         default_sets:ex.defaultSets,default_reps:ex.defaultReps,
-        media_url:ex.mediaUrl,fav:!!ex.fav,note:ex.note||''
+        media_url:ex.mediaUrl,video_url:ex.videoUrl||null,fav:!!ex.fav,note:ex.note||''
       })));
       if(error) throw error;
     }
@@ -2502,7 +2607,7 @@ async function loadFromCloud(silent){
       id:ex.id,name:ex.name,muscle:ex.muscle,
       formTags:ex.form_tags||[],customTags:ex.custom_tags||[],
       defaultSets:ex.default_sets,defaultReps:ex.default_reps,
-      mediaUrl:ex.media_url,fav:ex.fav,note:ex.note||''
+      mediaUrl:ex.media_url,videoUrl:ex.video_url||null,fav:ex.fav,note:ex.note||''
     }));
     // Migrera så cloud-data också får primärform (fält som inte syncas än)
     migrateExercisesToPrimaryForm();
@@ -2680,6 +2785,7 @@ function migrateNestedToBank(){
               defaultSets:ex.sets||3,
               defaultReps:ex.reps||10,
               mediaUrl:null,
+              videoUrl:null,
               fav:false,
               note:''
             };
@@ -3104,6 +3210,7 @@ function renderDetailExs(pass){
     const repStr=isCardio?(reps>0?`${sets}× ${reps} min`:`${sets} varv`):(reps>0?`${sets}×${reps}`:`${sets} set`);
     const grad=isCardio?'cardio':pf==='bodyweight'?'bodyweight':pf==='mobility'?'mobility':'strength';
     const muscleTag=ex.muscle?`<span style="background:var(--surface-2);color:var(--text-2);font-size:10px;font-weight:700;padding:2px 7px;border-radius:var(--r-pill);flex-shrink:0">${ex.muscle}</span>`:'';
+    const videoBtn=ex.videoUrl&&parseVideoUrl(ex.videoUrl)?`<button class="move-btn" onclick="event.stopPropagation();openVideoPlayer('${ex.id}')" title="Spela tutorial" style="background:rgba(91,82,240,0.1);border-color:var(--accent-4);color:var(--accent-4)"><i class="ti ti-player-play"></i></button>`:'';
     html+=`
     <div class="ex-row" onclick="openExerciseDetail('${ex.id}')" style="cursor:pointer">
       <div class="ex-row-thumb" style="background:${catGrad[grad]||catGrad.strength};position:relative">
@@ -3118,6 +3225,7 @@ function renderDetailExs(pass){
         </div>
       </div>
       ${ex.fav?'<span style="font-size:18px;line-height:1;flex-shrink:0" title="Favorit">⭐</span>':''}
+      ${videoBtn}
       <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
         <button class="move-btn" onclick="event.stopPropagation();moveExInPass('${pass.id}',${refIdx},-1)" title="Flytta upp" ${refIdx===0?'disabled style="opacity:0.3"':''}><i class="ti ti-chevron-up"></i></button>
         <button class="move-btn" onclick="event.stopPropagation();moveExInPass('${pass.id}',${refIdx},1)" title="Flytta ner" ${refIdx===refs.length-1?'disabled style="opacity:0.3"':''}><i class="ti ti-chevron-down"></i></button>
@@ -3260,7 +3368,7 @@ function addExToPlan(){
       formTags:inferFormTags('strength',f?.cat||'strength'),
       customTags:[],
       defaultSets:sets,defaultReps:reps,
-      mediaUrl:null,fav:false,note:''
+      mediaUrl:null,videoUrl:null,fav:false,note:''
     };
     exercises.push(ex);
   }
@@ -3390,6 +3498,8 @@ function openNewExercise(){
   document.getElementById('ex-f-fav').checked=false;
   document.getElementById('ex-f-note').value='';
   document.getElementById('ex-f-custom').value='';
+  document.getElementById('ex-f-video-url').value='';
+  renderExVideoPreview('');
   // Återställ alla form-specifika fält
   document.getElementById('ex-f-muscle').value=MUSCLE_TAGS[0];
   document.getElementById('ex-f-sets').value='3';
@@ -3442,6 +3552,8 @@ function openExerciseDetail(exId){
   document.getElementById('ex-f-fav').checked=!!ex.fav;
   document.getElementById('ex-f-note').value=ex.note||'';
   document.getElementById('ex-f-custom').value=(ex.customTags||[]).join(', ');
+  document.getElementById('ex-f-video-url').value=ex.videoUrl||'';
+  renderExVideoPreview(ex.videoUrl||'');
   // Aktivera rätt primärform först — visar/döljer fältsektioner
   setExPrimary(pf);
   // Fyll fält baserat på primärform
@@ -3523,8 +3635,14 @@ function saveExerciseEdit(){
     sets=parseInt(document.getElementById('ex-f-o-sets').value)||1;
     reps=parseInt(document.getElementById('ex-f-o-reps').value)||1;
   }
+  // Validera och normalisera video-URL (om angiven)
+  const videoUrlRaw=document.getElementById('ex-f-video-url').value.trim();
+  const videoUrl=videoUrlRaw?(parseVideoUrl(videoUrlRaw)?videoUrlRaw:null):null;
+  if(videoUrlRaw&&!videoUrl){
+    if(!confirm('Tutorial-URL:en kunde inte tolkas (stödjer YouTube och Vimeo). Spara övningen utan video-länk?')) return;
+  }
   let savedExId=editingExId;
-  const exData={name,primaryForm:pf,fav,note,customTags:custom,subTags,formTags,muscle,defaultSets:sets,defaultReps:reps,defaultWeight,useBodyweight,pulseZone,defaultDistance,defaultTime};
+  const exData={name,primaryForm:pf,fav,note,customTags:custom,subTags,formTags,muscle,defaultSets:sets,defaultReps:reps,defaultWeight,useBodyweight,pulseZone,defaultDistance,defaultTime,videoUrl};
   if(editingExId){
     const ex=findExercise(editingExId);
     if(ex) Object.assign(ex,exData);
@@ -3623,7 +3741,7 @@ function startLog(){
     }else if(cat==='strength'&&ex.defaultWeight){
       defW=ex.defaultWeight;
     }
-    loggedExs.push({name:ex.name,muscle:ex.muscle,cat,sets:Array(sets).fill(null).map(()=>({w:defW,r:defR,done:false}))});
+    loggedExs.push({exId:ex.id,videoUrl:ex.videoUrl||null,name:ex.name,muscle:ex.muscle,cat,sets:Array(sets).fill(null).map(()=>({w:defW,r:defR,done:false}))});
   });
   document.getElementById('log-select').style.display='none';
   document.getElementById('log-active').style.display='flex';
@@ -3642,6 +3760,7 @@ function renderLogExs(){
       <div class="ex-block-head">
         <div class="ex-block-num">${ei+1}</div>
         <div class="ex-block-name" style="flex:1">${ex.name}${ex.muscle?` <span style="background:var(--surface-2);color:var(--text-2);font-size:10px;font-weight:700;padding:2px 7px;border-radius:var(--r-pill);margin-left:6px">${ex.muscle}</span>`:''}</div>
+        ${ex.videoUrl&&parseVideoUrl(ex.videoUrl)?`<button class="move-btn" onclick="openVideoPlayerFromLog(${ei})" title="Spela tutorial" style="background:rgba(91,82,240,0.1);border-color:var(--accent-4);color:var(--accent-4)"><i class="ti ti-player-play"></i></button>`:''}
         <div style="display:flex;flex-direction:column;gap:2px">
           <button class="move-btn" onclick="moveLogEx(${ei},-1)" title="Flytta upp" ${ei===0?'disabled style="opacity:0.3"':''}><i class="ti ti-chevron-up"></i></button>
           <button class="move-btn" onclick="moveLogEx(${ei},1)" title="Flytta ner" ${ei===loggedExs.length-1?'disabled style="opacity:0.3"':''}><i class="ti ti-chevron-down"></i></button>
