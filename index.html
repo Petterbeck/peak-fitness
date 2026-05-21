@@ -365,6 +365,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <button class="btn-primary" onclick="openNewPass()" style="flex:1;min-width:160px"><i class="ti ti-plus"></i> Nytt träningspass</button>
         <button class="btn-ghost" onclick="openImportProgram()" style="flex:1;min-width:140px;font-size:12px;font-weight:700;color:var(--accent-4);border-color:var(--accent-4)"><i class="ti ti-sparkles"></i> Importera (AI)</button>
         <button class="btn-ghost" onclick="openScheduleProgram()" style="flex:1;min-width:160px;font-size:12px;font-weight:700;color:var(--accent-3);border-color:var(--accent-3)"><i class="ti ti-calendar-plus"></i> Schemalägg program</button>
+        <button class="btn-ghost" onclick="openImportShare()" style="flex:1;min-width:150px;font-size:12px;font-weight:700"><i class="ti ti-download"></i> Importera delning</button>
+        <button class="btn-ghost" onclick="openShareProgram()" style="flex:1;min-width:140px;font-size:12px;font-weight:700"><i class="ti ti-share"></i> Dela program</button>
         <button class="btn-ghost" onclick="openModal('m-add-form')" style="flex:1;min-width:130px;font-size:12px;font-weight:700"><i class="ti ti-folder-plus"></i> Ny träningsform</button>
       </div>
       <input class="search-bar" id="pass-search" placeholder="Sök pass..." oninput="renderPassList()">
@@ -450,7 +452,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="dd-exercises"></div>
     <button class="btn-ghost" onclick="openPickExerciseModal()"><i class="ti ti-adjustments-horizontal"></i> Justera övningar i passet</button>
     <button class="btn-primary" onclick="startPassFromDetail()" style="margin-top:6px"><i class="ti ti-player-play-filled"></i> Starta pass</button>
-    <button class="btn-ghost" onclick="deletePass()" style="margin-top:18px;color:#e8200a;border-color:#e8200a44;font-weight:700"><i class="ti ti-trash"></i> Ta bort detta pass</button>
+    <button class="btn-ghost" onclick="shareCurrentPass()" style="margin-top:6px;color:var(--accent-3);border-color:var(--accent-3);font-weight:700"><i class="ti ti-share"></i> Dela detta pass</button>
+    <button class="btn-ghost" onclick="deletePass()" style="margin-top:12px;color:#e8200a;border-color:#e8200a44;font-weight:700"><i class="ti ti-trash"></i> Ta bort detta pass</button>
   </div>
 </div>
 
@@ -773,6 +776,61 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div style="display:flex;gap:8px">
         <button class="btn-primary" onclick="confirmScheduleProgram()" style="flex:1"><i class="ti ti-calendar-check"></i> Schemalägg</button>
         <button class="btn-ghost" onclick="closeModal('m-schedule-program')">Avbryt</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Dela program (välj tagg) -->
+<div class="modal" id="m-share-program" onclick="closeBg(event,'m-share-program')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Dela program</div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Välj en program-tagg. Alla pass med den taggen (inkl. övningar och tutorial-länkar) paketeras till en delningskod du kan skicka till en annan atlet.</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label class="field-label">Program-tagg</label>
+        <select class="field-select" id="shp-tag" onchange="updateShareProgramPreview()"></select>
+        <div id="shp-preview" style="font-size:11px;color:var(--text-2);margin-top:6px"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="confirmShareProgram()" style="flex:1"><i class="ti ti-share"></i> Skapa delningskod</button>
+        <button class="btn-ghost" onclick="closeModal('m-share-program')">Avbryt</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delningsresultat: visar koden -->
+<div class="modal" id="m-share-result" onclick="closeBg(event,'m-share-result')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">✅ Delning skapad</div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:14px" id="shr-desc">Skicka den här koden till den andra atleten. Hen skriver in den under "Importera delning".</div>
+    <div style="background:var(--surface-2);border:2px dashed var(--accent-3);border-radius:var(--r);padding:18px;text-align:center;margin-bottom:14px">
+      <div style="font-size:11px;color:var(--text-3);font-weight:700;text-transform:uppercase;margin-bottom:6px">Delningskod</div>
+      <div id="shr-code" style="font-size:28px;font-weight:800;letter-spacing:2px;color:var(--accent-3);font-family:monospace">PEAK-XXXXXX</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn-primary" onclick="copyShareCode()" id="shr-copy-btn"><i class="ti ti-copy"></i> Kopiera kod</button>
+      <button class="btn-ghost" onclick="shareCodeNative()" id="shr-share-btn"><i class="ti ti-share"></i> Dela via...</button>
+      <button class="btn-ghost" onclick="closeModal('m-share-result')">Stäng</button>
+    </div>
+  </div>
+</div>
+
+<!-- Importera delning (skriv kod) -->
+<div class="modal" id="m-import-share" onclick="closeBg(event,'m-import-share')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Importera delning</div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:14px">Skriv in delningskoden du fått från en annan atlet. Pass, övningar och tutorial-länkar kopieras in i din app.</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label class="field-label">Delningskod</label>
+        <input class="field-input" id="ish-code" placeholder="PEAK-XXXXXX" style="font-family:monospace;font-size:16px;letter-spacing:1px;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+      </div>
+      <div id="ish-status" style="font-size:12px;min-height:16px;line-height:1.5"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="confirmImportShare()" style="flex:1" id="ish-btn"><i class="ti ti-download"></i> Hämta delning</button>
+        <button class="btn-ghost" onclick="closeModal('m-import-share')">Avbryt</button>
       </div>
     </div>
   </div>
@@ -1113,6 +1171,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <button class="btn-primary" onclick="saveExerciseEdit()" style="flex:1"><i class="ti ti-check"></i> Spara</button>
         <button class="btn-ghost" onclick="deleteExercise()" id="ex-delete-btn" style="flex:0 0 auto;color:#e8200a;border-color:#e8200a;background:transparent;font-weight:700"><i class="ti ti-trash"></i> Ta bort</button>
       </div>
+      <button class="btn-ghost" id="ex-share-btn" onclick="shareCurrentExercise()" style="font-size:12px;font-weight:700;color:var(--accent-3);border-color:var(--accent-3)"><i class="ti ti-share"></i> Dela övning</button>
     </div>
   </div>
 </div>
@@ -2739,6 +2798,288 @@ function confirmScheduleProgram(){
   if(typeof renderWeekSchedule==='function') renderWeekSchedule();
 }
 
+/* ========== DELNING (Fas 1: dela + ta emot) ========== */
+// Generera en läsbar kod, undvik förväxlingsbara tecken (0/O, 1/I/L)
+function genShareCode(){
+  const chars='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let s='';
+  for(let i=0;i<6;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+  return 'PEAK-'+s;
+}
+
+// Serialisera en övning till delnings-payload. refSets/refReps = pass-specifika värden om del av pass.
+function serializeExerciseForShare(ex,refSets,refReps){
+  return {
+    name:ex.name,muscle:ex.muscle||'',primaryForm:ex.primaryForm||'strength',
+    defaultSets:ex.defaultSets??3,defaultReps:ex.defaultReps??10,defaultWeight:ex.defaultWeight??null,
+    useBodyweight:!!ex.useBodyweight,pulseZone:ex.pulseZone??null,
+    defaultDistance:ex.defaultDistance??null,defaultTime:ex.defaultTime??null,
+    formTags:ex.formTags||[],subTags:ex.subTags||[],customTags:ex.customTags||[],
+    note:ex.note||'',videoUrl:ex.videoUrl||null,
+    sets:refSets??ex.defaultSets??3,reps:refReps??ex.defaultReps??10
+  };
+}
+
+// Serialisera ett pass (med dess övningar) till delnings-payload
+function serializePassForShare(pass,form){
+  return {
+    name:pass.name,desc:pass.desc||'',color:pass.color||'#5b52f0',
+    formCat:form?.cat||'strength',formName:form?.name||'Delat',formIcon:form?.icon||'💪',
+    formTags:pass.formTags||[],customTags:pass.customTags||[],
+    exercises:(pass.exerciseRefs||[]).map(ref=>{
+      const ex=findExercise(ref.exId);
+      if(!ex) return null;
+      return serializeExerciseForShare(ex,ref.sets,ref.reps);
+    }).filter(Boolean)
+  };
+}
+
+// Skriv en delning till Supabase, returnera koden
+async function createShare(type,title,payload){
+  if(!supa||!currentUser) throw new Error('Du måste vara inloggad för att dela');
+  let code;
+  for(let attempt=0;attempt<6;attempt++){
+    code=genShareCode();
+    const {data:existing}=await supa.from('shares').select('id').eq('code',code).maybeSingle();
+    if(!existing) break;
+    code=null;
+  }
+  if(!code) throw new Error('Kunde inte generera unik kod, försök igen');
+  const {error}=await supa.from('shares').insert({
+    code,owner_id:currentUser.id,type,title,payload
+  });
+  if(error) throw error;
+  return code;
+}
+
+// Dela det öppnade passet
+async function shareCurrentPass(){
+  if(!curPassId){alert('Inget pass valt');return;}
+  const r=findPass(curPassId);
+  if(!r){alert('Passet kunde inte hittas');return;}
+  if(!supa||!currentUser){alert('Du måste vara inloggad för att dela');return;}
+  try{
+    const payload={type:'pass',version:1,pass:serializePassForShare(r.pass,r.form)};
+    const code=await createShare('pass',r.pass.name,payload);
+    showShareResult(code,`Passet "${r.pass.name}" är delat. ${(r.pass.exerciseRefs||[]).length} övningar ingår.`);
+  }catch(e){
+    console.error('Dela pass-fel:',e);
+    alert('Kunde inte dela passet: '+e.message);
+  }
+}
+
+// Dela en enskild övning (från övnings-editorn)
+async function shareCurrentExercise(){
+  if(!editingExId){alert('Spara övningen först innan du delar den');return;}
+  const ex=findExercise(editingExId);
+  if(!ex){alert('Övningen kunde inte hittas');return;}
+  if(!supa||!currentUser){alert('Du måste vara inloggad för att dela');return;}
+  try{
+    const payload={type:'exercise',version:1,exercise:serializeExerciseForShare(ex)};
+    const code=await createShare('exercise',ex.name,payload);
+    showShareResult(code,`Övningen "${ex.name}" är delad${ex.videoUrl?' (med tutorial-länk)':''}.`);
+  }catch(e){
+    console.error('Dela övning-fel:',e);
+    alert('Kunde inte dela övningen: '+e.message);
+  }
+}
+
+// --- Dela program ---
+function openShareProgram(){
+  const tags=getProgramTags();
+  const select=document.getElementById('shp-tag');
+  if(!tags.length){
+    alert('Inga programtaggar hittades. Importera/skapa flera pass med samma tagg (t.ex. "Lidingö Slalom") för att kunna dela dem som program.');
+    return;
+  }
+  select.innerHTML=tags.map(t=>`<option value="${escapeHtml(t.tag)}">${escapeHtml(t.tag)} (${t.count} pass)</option>`).join('');
+  updateShareProgramPreview();
+  openModal('m-share-program');
+}
+
+function updateShareProgramPreview(){
+  const tag=document.getElementById('shp-tag').value;
+  const passes=tag?getPassesByTag(tag):[];
+  const prev=document.getElementById('shp-preview');
+  if(passes.length){
+    let exCount=0;passes.forEach(p=>exCount+=(p.pass.exerciseRefs||[]).length);
+    prev.innerHTML=`<b>${passes.length} pass</b>, ${exCount} övningar totalt: ${passes.map(p=>escapeHtml(p.pass.name)).slice(0,5).join(', ')}${passes.length>5?'…':''}`;
+  }else prev.innerHTML='';
+}
+
+async function confirmShareProgram(){
+  const tag=document.getElementById('shp-tag').value;
+  if(!tag){alert('Välj en tagg');return;}
+  const passes=getPassesByTag(tag);
+  if(!passes.length){alert('Inga pass hittades med taggen');return;}
+  if(!supa||!currentUser){alert('Du måste vara inloggad för att dela');return;}
+  try{
+    const payload={
+      type:'program',version:1,tag,
+      passes:passes.map(({pass,form})=>serializePassForShare(pass,form))
+    };
+    const code=await createShare('program',tag,payload);
+    closeModal('m-share-program');
+    showShareResult(code,`Programmet "${tag}" är delat. ${passes.length} pass ingår.`);
+  }catch(e){
+    console.error('Dela program-fel:',e);
+    alert('Kunde inte dela programmet: '+e.message);
+  }
+}
+
+// --- Visa delningsresultat ---
+let lastShareCode='';
+function showShareResult(code,desc){
+  lastShareCode=code;
+  document.getElementById('shr-code').textContent=code;
+  document.getElementById('shr-desc').textContent=desc+' Skicka koden till den andra atleten — hen skriver in den under "Importera delning".';
+  document.getElementById('shr-copy-btn').innerHTML='<i class="ti ti-copy"></i> Kopiera kod';
+  // Göm "Dela via..." om Web Share API saknas (desktop)
+  document.getElementById('shr-share-btn').style.display=navigator.share?'':'none';
+  openModal('m-share-result');
+}
+
+async function copyShareCode(){
+  try{
+    await navigator.clipboard.writeText(lastShareCode);
+    document.getElementById('shr-copy-btn').innerHTML='<i class="ti ti-check"></i> Kopierad!';
+  }catch(e){
+    // Fallback om clipboard nekas
+    document.getElementById('shr-copy-btn').innerHTML='Markera koden och kopiera manuellt';
+  }
+}
+
+async function shareCodeNative(){
+  if(!navigator.share) return;
+  try{
+    await navigator.share({
+      title:'Peak Fitness-delning',
+      text:`Importera detta i Peak Fitness med koden: ${lastShareCode}`
+    });
+  }catch(e){/* användaren avbröt */}
+}
+
+// --- Importera delning ---
+function openImportShare(){
+  document.getElementById('ish-code').value='';
+  document.getElementById('ish-status').textContent='';
+  document.getElementById('ish-btn').disabled=false;
+  openModal('m-import-share');
+}
+
+async function confirmImportShare(){
+  const code=document.getElementById('ish-code').value.trim().toUpperCase();
+  const status=document.getElementById('ish-status');
+  if(!code){status.style.color='#e8200a';status.textContent='Skriv in en kod';return;}
+  if(!supa||!currentUser){status.style.color='#e8200a';status.textContent='Du måste vara inloggad';return;}
+  const btn=document.getElementById('ish-btn');
+  btn.disabled=true;
+  status.style.color='var(--text-2)';
+  status.textContent='⏳ Hämtar delning…';
+  try{
+    const {data,error}=await supa.rpc('get_share',{share_code:code});
+    if(error) throw error;
+    if(!data||!data.length) throw new Error(`Ingen delning hittades med koden ${code}. Kontrollera att den är rätt.`);
+    const share=data[0];
+    const payload=share.payload;
+    const ownerId=share.owner_id;
+    let result;
+    if(payload.type==='pass'){
+      result=importSharedPass(payload.pass,share.code,ownerId);
+      status.style.color='var(--accent-3)';
+      status.textContent=`✓ Passet "${payload.pass.name}" importerat (${result.newEx} nya övningar)`;
+    }else if(payload.type==='program'){
+      result=importSharedProgram(payload,share.code,ownerId);
+      status.style.color='var(--accent-3)';
+      status.textContent=`✓ Programmet "${payload.tag}" importerat: ${result.passCount} pass, ${result.newEx} nya övningar`;
+    }else if(payload.type==='exercise'){
+      result=importSharedExercise(payload.exercise,share.code,ownerId);
+      status.style.color='var(--accent-3)';
+      status.textContent=result.isNew?`✓ Övningen "${payload.exercise.name}" tillagd i banken`:`Övningen "${payload.exercise.name}" fanns redan i banken`;
+    }else{
+      throw new Error('Okänd delningstyp: '+payload.type);
+    }
+    saveState();
+    renderPassList();
+    renderExercises();
+    setTimeout(()=>{closeModal('m-import-share');},1800);
+  }catch(e){
+    console.error('Importera delning-fel:',e);
+    status.style.color='#e8200a';
+    status.textContent='❌ '+e.message;
+    btn.disabled=false;
+  }
+}
+
+// Hitta lämplig träningsform eller skapa ny
+function findOrCreateFormForShare(formCat,formName,formIcon){
+  let form=trainingForms.find(f=>f.name===formName);
+  if(form) return form;
+  form=trainingForms.find(f=>f.cat===formCat);
+  if(form) return form;
+  form={id:crypto.randomUUID(),name:formName||'Delat',icon:formIcon||'💪',cat:formCat||'strength',passTypes:[]};
+  trainingForms.push(form);
+  return form;
+}
+
+// Skapa en övning i banken från delnings-data (skippa dubbletter via namn)
+function ensureSharedExercise(exData,shareCode,ownerId){
+  let ex=exercises.find(e=>e.name.toLowerCase().trim()===exData.name.toLowerCase().trim());
+  let isNew=false;
+  if(!ex){
+    ex={
+      id:crypto.randomUUID(),
+      name:exData.name,muscle:exData.muscle||'Bål',primaryForm:exData.primaryForm||'strength',
+      defaultSets:exData.defaultSets??3,defaultReps:exData.defaultReps??10,defaultWeight:exData.defaultWeight??null,
+      useBodyweight:!!exData.useBodyweight,pulseZone:exData.pulseZone??null,
+      defaultDistance:exData.defaultDistance??null,defaultTime:exData.defaultTime??null,
+      formTags:exData.formTags||[],subTags:exData.subTags||[],customTags:exData.customTags||[],
+      note:exData.note||'',videoUrl:exData.videoUrl||null,mediaUrl:null,fav:false,
+      shareCode:shareCode||null,sharedFrom:ownerId||null
+    };
+    exercises.push(ex);
+    isNew=true;
+  }else if(exData.videoUrl&&!ex.videoUrl){
+    // Berika befintlig övning med tutorial-länk om den saknar
+    ex.videoUrl=exData.videoUrl;
+  }
+  return {ex,isNew};
+}
+
+function importSharedPass(passData,shareCode,ownerId){
+  const form=findOrCreateFormForShare(passData.formCat,passData.formName,passData.formIcon);
+  const exerciseRefs=[];
+  let newEx=0;
+  (passData.exercises||[]).forEach(exData=>{
+    const {ex,isNew}=ensureSharedExercise(exData,shareCode,ownerId);
+    if(isNew) newEx++;
+    exerciseRefs.push({exId:ex.id,sets:exData.sets??ex.defaultSets,reps:exData.reps??ex.defaultReps});
+  });
+  const pass={
+    id:crypto.randomUUID(),
+    name:passData.name,desc:passData.desc||'',color:passData.color||'#5b52f0',
+    formTags:passData.formTags||[],customTags:passData.customTags||[],
+    exerciseRefs,
+    shareCode:shareCode||null,sharedFrom:ownerId||null
+  };
+  form.passTypes.push(pass);
+  return {pass,newEx};
+}
+
+function importSharedProgram(payload,shareCode,ownerId){
+  let passCount=0,newEx=0;
+  (payload.passes||[]).forEach(passData=>{
+    const r=importSharedPass(passData,shareCode,ownerId);
+    passCount++;newEx+=r.newEx;
+  });
+  return {passCount,newEx};
+}
+
+function importSharedExercise(exData,shareCode,ownerId){
+  const {isNew}=ensureSharedExercise(exData,shareCode,ownerId);
+  return {isNew};
+}
+
 async function confirmImport(){
   if(!importedData) return;
   const {data,tag}=importedData;
@@ -4008,6 +4349,9 @@ function openNewExercise(){
   document.getElementById('ex-f-custom').value='';
   document.getElementById('ex-f-video-url').value='';
   renderExVideoPreview('');
+  // Dölj dela-knappen för osparade nya övningar
+  const shareBtn=document.getElementById('ex-share-btn');
+  if(shareBtn) shareBtn.style.display='none';
   // Återställ alla form-specifika fält
   document.getElementById('ex-f-muscle').value=MUSCLE_TAGS[0];
   document.getElementById('ex-f-sets').value='3';
@@ -4062,6 +4406,9 @@ function openExerciseDetail(exId){
   document.getElementById('ex-f-custom').value=(ex.customTags||[]).join(', ');
   document.getElementById('ex-f-video-url').value=ex.videoUrl||'';
   renderExVideoPreview(ex.videoUrl||'');
+  // Visa dela-knappen när vi redigerar en befintlig övning
+  const shareBtn=document.getElementById('ex-share-btn');
+  if(shareBtn) shareBtn.style.display='';
   // Aktivera rätt primärform först — visar/döljer fältsektioner
   setExPrimary(pf);
   // Fyll fält baserat på primärform
