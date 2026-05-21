@@ -1082,8 +1082,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <!-- VY 1: Upload -->
     <div id="exa-view-upload">
       <div class="modal-title" id="exa-modal-title">AI-analys av övning</div>
-      <div id="exa-modal-desc" style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Ladda upp en video (5–30 sek) eller en bild av övningen. AI föreslår namn, muskelgrupp och taggar — du verifierar innan det fylls i.</div>
+      <div id="exa-modal-desc" style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Ladda upp en video/bild eller klistra in en YouTube-länk. AI föreslår namn, muskelgrupp och taggar — du verifierar innan det fylls i.</div>
       <div style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <label class="field-label">YouTube/Vimeo-länk</label>
+          <input class="field-input" id="exa-url-input" placeholder="https://www.youtube.com/watch?v=..." oninput="onExaUrlChange(this.value)">
+          <div id="exa-url-preview" style="margin-top:6px"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:11px;font-weight:700">
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+          <span>ELLER LADDA UPP FIL</span>
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+        </div>
         <div>
           <label class="field-label">Video eller bild</label>
           <div id="exa-file-zone" onclick="document.getElementById('exa-file').click()" style="border:2px dashed var(--border-md);border-radius:var(--r);padding:18px 12px;text-align:center;cursor:pointer;transition:all 0.18s;background:var(--surface)">
@@ -1796,13 +1806,17 @@ let exaState=null; // {frames:[Blob], primaryFile:File, suggestion:object|null, 
 function openExAnalyze(){
   // Detektera läge baserat på om vi redigerar en befintlig övning
   const mode=editingExId?'tutorial':'create';
-  exaState={frames:[],primaryFile:null,suggestion:null,mode};
+  exaState={frames:[],primaryFile:null,suggestion:null,mode,sourceUrl:null,youtubeTitle:null,youtubeAuthor:null};
   document.getElementById('exa-file').value='';
   document.getElementById('exa-file-status').textContent='';
   document.getElementById('exa-preview-wrap').style.display='none';
   document.getElementById('exa-preview-grid').innerHTML='';
   document.getElementById('exa-preview-content').innerHTML='';
   document.getElementById('exa-analyze-btn').disabled=true;
+  const urlInput=document.getElementById('exa-url-input');
+  if(urlInput) urlInput.value='';
+  const urlPreview=document.getElementById('exa-url-preview');
+  if(urlPreview) urlPreview.innerHTML='';
   // Uppdatera modal-titel och beskrivning beroende på läge
   const titleEl=document.getElementById('exa-modal-title');
   const descEl=document.getElementById('exa-modal-desc');
@@ -1830,14 +1844,17 @@ async function onExAnalyzeFileChange(input){
   const status=document.getElementById('exa-file-status');
   const grid=document.getElementById('exa-preview-grid');
   const wrap=document.getElementById('exa-preview-wrap');
-  // Behåll mode från openExAnalyze
+  // Behåll mode från openExAnalyze. Rensa URL-state — fil-upload ersätter URL-flowet
   const currentMode=exaState?.mode||(editingExId?'tutorial':'create');
+  const urlInput=document.getElementById('exa-url-input');
+  if(urlInput) urlInput.value='';
+  document.getElementById('exa-url-preview').innerHTML='';
   status.style.color='var(--text-2)';
   status.textContent='⏳ Bearbetar…';
   grid.innerHTML='';
   wrap.style.display='none';
   document.getElementById('exa-analyze-btn').disabled=true;
-  exaState={frames:[],primaryFile:null,suggestion:null,mode:currentMode};
+  exaState={frames:[],primaryFile:null,suggestion:null,mode:currentMode,sourceUrl:null,youtubeTitle:null,youtubeAuthor:null};
   try{
     const isVideo=file.type.startsWith('video/');
     const isImage=file.type.startsWith('image/');
@@ -1848,7 +1865,7 @@ async function onExAnalyzeFileChange(input){
       const url=URL.createObjectURL(file);
       grid.innerHTML=`<img src="${url}" style="width:100%;grid-column:span 5;border-radius:var(--r-sm);max-height:200px;object-fit:contain;background:var(--surface-2)">`;
       wrap.style.display='block';
-      exaState={frames:[file],primaryFile:file,suggestion:null,mode:currentMode};
+      exaState={frames:[file],primaryFile:file,suggestion:null,mode:currentMode,sourceUrl:null,youtubeTitle:null,youtubeAuthor:null};
       status.style.color='var(--accent-3)';
       status.textContent=`✓ Bild redo — klicka "Analysera"`;
     }else{
@@ -1862,7 +1879,7 @@ async function onExAnalyzeFileChange(input){
         return `<img src="${url}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:4px;background:var(--surface-2)">`;
       }).join('');
       wrap.style.display='block';
-      exaState={frames,primaryFile:file,suggestion:null,mode:currentMode};
+      exaState={frames,primaryFile:file,suggestion:null,mode:currentMode,sourceUrl:null,youtubeTitle:null,youtubeAuthor:null};
       status.style.color='var(--accent-3)';
       status.textContent=`✓ ${frames.length} stillbilder extraherade — klicka "Analysera"`;
     }
@@ -1871,7 +1888,7 @@ async function onExAnalyzeFileChange(input){
     console.error('Ex-analyze fil-fel:',e);
     status.style.color='#e8200a';
     status.textContent='❌ '+e.message;
-    exaState={frames:[],primaryFile:null,suggestion:null,mode:currentMode};
+    exaState={frames:[],primaryFile:null,suggestion:null,mode:currentMode,sourceUrl:null,youtubeTitle:null,youtubeAuthor:null};
   }
 }
 
@@ -1938,6 +1955,123 @@ async function extractFramesFromVideo(file,numFrames=5){
   }
 }
 
+// Hanteras när användaren skriver i YouTube/Vimeo-URL-fältet i analys-modalen.
+// Hämtar thumbnail + oEmbed-titel async och förbereder exaState för analys.
+async function onExaUrlChange(url){
+  const preview=document.getElementById('exa-url-preview');
+  const status=document.getElementById('exa-file-status');
+  const grid=document.getElementById('exa-preview-grid');
+  const wrap=document.getElementById('exa-preview-wrap');
+  const analyzeBtn=document.getElementById('exa-analyze-btn');
+  const trimmed=(url||'').trim();
+  if(!trimmed){
+    preview.innerHTML='';
+    // Avbryt bara om vi tidigare hade en URL-state — låt fil-uppladdning vara om man bytte
+    if(exaState&&exaState.sourceUrl){
+      exaState={frames:[],primaryFile:null,suggestion:null,mode:exaState.mode,sourceUrl:null,youtubeTitle:null,youtubeAuthor:null};
+      grid.innerHTML='';
+      wrap.style.display='none';
+      status.textContent='';
+      analyzeBtn.disabled=true;
+    }
+    return;
+  }
+  const parsed=parseVideoUrl(trimmed);
+  if(!parsed){
+    preview.innerHTML=`<div style="font-size:11px;color:#e8200a;padding:4px 0">⚠️ Kunde inte tolka URL — stödjer YouTube och Vimeo</div>`;
+    if(exaState&&exaState.sourceUrl){
+      exaState.frames=[];
+      analyzeBtn.disabled=true;
+    }
+    return;
+  }
+  preview.innerHTML=`<div style="font-size:11px;color:var(--text-2);padding:4px 0">⏳ Hämtar tumnagel och metadata…</div>`;
+  try{
+    // Rensa fil-input om vi tidigare hade en fil — URL tar över
+    document.getElementById('exa-file').value='';
+    grid.innerHTML='';
+    wrap.style.display='none';
+    // Hämta thumbnail som blob (för att skicka till AI)
+    const thumbBlob=await fetchVideoThumbnailBlob(parsed);
+    if(!thumbBlob) throw new Error('Kunde inte hämta tumnagel från videon');
+    // Hämta oEmbed-metadata (titel, kanal) — extra kontext till AI
+    const meta=await fetchVideoOembed(parsed);
+    const title=meta?.title||null;
+    const author=meta?.author_name||null;
+    const currentMode=exaState?.mode||(editingExId?'tutorial':'create');
+    exaState={
+      frames:[thumbBlob],
+      primaryFile:null,
+      suggestion:null,
+      mode:currentMode,
+      sourceUrl:trimmed,
+      youtubeTitle:title,
+      youtubeAuthor:author
+    };
+    // Visa preview
+    const thumbObjUrl=URL.createObjectURL(thumbBlob);
+    grid.innerHTML=`<img src="${thumbObjUrl}" style="width:100%;grid-column:span 5;border-radius:var(--r-sm);max-height:200px;object-fit:contain;background:var(--surface-2)">`;
+    wrap.style.display='block';
+    preview.innerHTML=`
+      <div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--surface-2);border-radius:var(--r-sm);margin-top:6px">
+        <div style="font-size:20px;flex-shrink:0">${parsed.provider==='youtube'?'▶️':'🎬'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:700;color:var(--accent-3)">✓ ${parsed.provider==='youtube'?'YouTube':'Vimeo'}-länk redo</div>
+          ${title?`<div style="font-size:11px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(title)}${author?' · '+escapeHtml(author):''}</div>`:`<div style="font-size:10px;color:var(--text-3)">ID: ${parsed.id}</div>`}
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--text-3);margin-top:4px;line-height:1.4">💡 AI analyserar tumnagelbild + videotitel. Övningens länk sparas också automatiskt.</div>
+    `;
+    status.textContent='';
+    analyzeBtn.disabled=false;
+  }catch(e){
+    console.error('YouTube-preview misslyckades:',e);
+    preview.innerHTML=`<div style="font-size:11px;color:#e8200a;padding:4px 0">❌ ${escapeHtml(e.message)}</div>`;
+    analyzeBtn.disabled=true;
+  }
+}
+
+// Hämta video-tumnagel som blob, redo att skickas till AI
+async function fetchVideoThumbnailBlob(parsed){
+  const thumbUrl=videoThumbnailUrl(parsed);
+  if(!thumbUrl) return null;
+  // Försök max-resolution först (finns inte för alla videor), fallback till hqdefault
+  const candidates=parsed.provider==='youtube'
+    ?[`https://img.youtube.com/vi/${parsed.id}/maxresdefault.jpg`,thumbUrl]
+    :[thumbUrl];
+  for(const url of candidates){
+    try{
+      const res=await fetch(url);
+      if(!res.ok) continue;
+      const blob=await res.blob();
+      // Validera: YouTube returnerar en 120x90 default-bild om videon saknar thumb, vi avvisar minimala blobs
+      if(blob.size<5000) continue;
+      return blob;
+    }catch(e){
+      console.warn('Thumbnail-fetch misslyckades för',url,':',e.message);
+    }
+  }
+  return null;
+}
+
+// Hämta video-titel + kanal via oEmbed (publik, ingen API-nyckel behövs)
+async function fetchVideoOembed(parsed){
+  try{
+    let oembedUrl;
+    if(parsed.provider==='youtube'){
+      oembedUrl=`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${parsed.id}&format=json`;
+    }else if(parsed.provider==='vimeo'){
+      oembedUrl=`https://vimeo.com/api/oembed.json?url=https://vimeo.com/${parsed.id}`;
+    }else return null;
+    const res=await fetch(oembedUrl);
+    if(!res.ok) return null;
+    return await res.json();
+  }catch(e){
+    console.warn('oEmbed misslyckades:',e.message);
+    return null;
+  }
+}
+
 async function analyzeExerciseMedia(){
   if(!exaState||!exaState.frames.length){alert('Ladda upp en fil först');return;}
   showExaView('loading');
@@ -1965,7 +2099,14 @@ Riktlinjer:
 - matchComment: bara fyll i om match=false ("Detta ser ut att vara bänkpress, inte ${exName}")
 
 KRITISKT - JSON-format: endast giltig JSON, dubbla citattecken, inga trailing commas, ingen markdown.`;
-    userInstr=`Den befintliga övningen heter "${exName}"${exMuscle?` (muskelgrupp: ${exMuscle})`:''}${exForm?` (träningsform: ${exForm})`:''}. Analysera ${exaState.frames.length>1?'dessa stillbilder från en träningsvideo':'denna bild'} och föreslå en utförande-beskrivning enligt JSON-formatet. Bekräfta också att det stämmer med övningsnamnet.`;
+    let ytContext='';
+    if(exaState.sourceUrl){
+      ytContext=`\n\nExtra kontext: tumnagelbilden kommer från en YouTube/Vimeo-video.`;
+      if(exaState.youtubeTitle) ytContext+=` Videotitel: "${exaState.youtubeTitle}".`;
+      if(exaState.youtubeAuthor) ytContext+=` Kanal: ${exaState.youtubeAuthor}.`;
+      ytContext+=` Använd titeln som extra ledtråd för utförande-beskrivningen.`;
+    }
+    userInstr=`Den befintliga övningen heter "${exName}"${exMuscle?` (muskelgrupp: ${exMuscle})`:''}${exForm?` (träningsform: ${exForm})`:''}. Analysera ${exaState.frames.length>1?'dessa stillbilder från en träningsvideo':'denna bild'} och föreslå en utförande-beskrivning enligt JSON-formatet. Bekräfta också att det stämmer med övningsnamnet.${ytContext}`;
   }else{
     // Skapa ny övning — AI föreslår allt
     systemPrompt=`Du är expert på träning och övningsanalys. Användaren har skickat in stillbilder från en träningsvideo (eller en enskild bild). Analysera vad övningen är och föreslå metadata för en NY övning i deras träningsapp.
@@ -1995,9 +2136,21 @@ Riktlinjer:
 - note: konkret om utförandet inkl vanliga misstag
 
 KRITISKT - JSON-format: endast giltig JSON, dubbla citattecken, inga trailing commas, ingen markdown.`;
-    userInstr=exaState.frames.length>1
-      ?'Analysera dessa stillbilder från en träningsvideo och föreslå metadata enligt JSON-formatet i system-prompten. Bilderna är tagna i tidsordning.'
-      :'Analysera denna bild av en träningsövning och föreslå metadata enligt JSON-formatet i system-prompten.';
+    let baseInstr;
+    if(exaState.sourceUrl){
+      // Vi har bara EN bild (tumnageln) men plus videotitel som ledtråd
+      baseInstr='Analysera denna tumnagelbild från en träningsvideo och föreslå metadata enligt JSON-formatet i system-prompten.';
+      if(exaState.youtubeTitle){
+        baseInstr+=` Videons titel är: "${exaState.youtubeTitle}".`;
+        if(exaState.youtubeAuthor) baseInstr+=` Publicerad av: ${exaState.youtubeAuthor}.`;
+        baseInstr+=' Använd titeln som STARK ledtråd för övningsnamnet (det är ofta exakt det användaren vill) och tumnageln för att verifiera muskelgrupp och form.';
+      }
+    }else if(exaState.frames.length>1){
+      baseInstr='Analysera dessa stillbilder från en träningsvideo och föreslå metadata enligt JSON-formatet i system-prompten. Bilderna är tagna i tidsordning.';
+    }else{
+      baseInstr='Analysera denna bild av en träningsövning och föreslå metadata enligt JSON-formatet i system-prompten.';
+    }
+    userInstr=baseInstr;
   }
   try{
     const blocks=[];
@@ -2169,7 +2322,15 @@ function applyExAnalyze(){
   if(!exaState||!exaState.suggestion){closeModal('m-ex-analyze');return;}
   const s=exaState.suggestion;
   const mode=exaState.mode||'create';
-  // I tutorial-läge: bara uppdatera anteckningsfältet, rör inget annat
+  // Spara YouTube/Vimeo-URL direkt på övningen om analys gjordes via länk-flowet
+  if(exaState.sourceUrl){
+    const videoField=document.getElementById('ex-f-video-url');
+    if(videoField){
+      videoField.value=exaState.sourceUrl;
+      renderExVideoPreview(exaState.sourceUrl);
+    }
+  }
+  // I tutorial-läge: bara uppdatera anteckningsfältet (+ ev URL ovan), rör inget annat
   if(mode==='tutorial'){
     if(s.note){
       const noteField=document.getElementById('ex-f-note');
@@ -3819,6 +3980,7 @@ function finishLog(){
     feel:feelRating,
     note:document.getElementById('log-note').value||'',
     exercises:loggedExs.map(ex=>({
+      exId:ex.exId||null,
       name:ex.name,cat:ex.cat,
       sets:ex.sets.map(s=>({w:s.w,r:s.r,done:!!s.done}))
     }))
@@ -4717,12 +4879,22 @@ function renderWorkoutDetail(){
           return `<div style="display:grid;grid-template-columns:24px 1fr 1fr 24px;gap:6px;font-size:12px;padding:4px 0;align-items:center"><div style="color:var(--text-3);font-weight:700;text-align:center">${si+1}</div><div style="text-align:center"><span style="font-weight:700">${s.w||'–'}</span> <span style="color:var(--text-3);font-size:10px">${wLabel.toLowerCase()}</span></div><div style="text-align:center"><span style="font-weight:700">${s.r||'–'}</span> <span style="color:var(--text-3);font-size:10px">${rLabel.toLowerCase()}</span></div><div style="text-align:center;color:${s.done?'var(--accent-3)':'var(--text-3)'}">${s.done?'<i class="ti ti-check"></i>':'–'}</div></div>`;
         }).join(''):'<div style="font-size:12px;color:var(--text-3);padding:6px 0">Inga set registrerade</div>';
       }
+      // Hitta tutorial-video: först via exId (säkrast), annars fallback via namn (för historiska pass innan vi sparade exId)
+      let origEx=null;
+      if(ex.exId) origEx=findExercise(ex.exId);
+      if(!origEx&&ex.name) origEx=exercises.find(e=>e.name.toLowerCase()===ex.name.toLowerCase());
+      const videoBtn=origEx&&origEx.videoUrl&&parseVideoUrl(origEx.videoUrl)
+        ?`<button class="move-btn" onclick="openVideoPlayer('${origEx.id}')" title="Spela tutorial" style="background:rgba(91,82,240,0.1);border-color:var(--accent-4);color:var(--accent-4);margin-left:6px"><i class="ti ti-player-play"></i></button>`
+        :'';
+      const noteLine=origEx&&origEx.note?`<div style="font-size:11px;color:var(--text-3);font-style:italic;padding:4px 13px 6px;line-height:1.4">${escapeHtml(origEx.note)}</div>`:'';
       return `
       <div class="ex-block">
-        <div class="ex-block-head">
+        <div class="ex-block-head" style="display:flex;align-items:center;gap:6px">
           <div class="ex-block-num">${exIdx+1}</div>
-          <div class="ex-block-name">${ex.name}</div>
+          <div class="ex-block-name" style="flex:1">${ex.name}</div>
+          ${videoBtn}
         </div>
+        ${noteLine}
         ${workoutEditMode?setsHtml:'<div style="padding:6px 13px">'+setsHtml+'</div>'}
       </div>`;
     }).join('');
