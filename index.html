@@ -688,8 +688,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Ladda upp en fil eller klistra in text. AI tolkar och föreslår pass + övningar — du verifierar innan import.</div>
       <div style="display:flex;flex-direction:column;gap:12px">
         <div>
-          <label class="field-label">YouTube/Vimeo-länk (för pass-video)</label>
-          <input class="field-input" id="imp-url-input" placeholder="https://www.youtube.com/watch?v=..." oninput="onImpUrlChange(this.value)">
+          <label class="field-label">YouTube/Vimeo-länk(ar) för pass</label>
+          <textarea class="field-input" id="imp-url-input" rows="2" placeholder="https://www.youtube.com/watch?v=..." oninput="onImpUrlChange(this.value)" style="resize:vertical;min-height:40px;font-family:inherit"></textarea>
+          <div style="font-size:10px;color:var(--text-3);margin-top:4px;line-height:1.4">💡 <b>Tips för bästa resultat:</b><br>• Använd klipp på <b>max 2–3 min</b> (titeln är AI:ns huvudkälla)<br>• Skriv <b>antal övningar</b> + vilka, set/reps i textrutan nedan<br>• För flera pass: en länk per rad — varje video blir ett separat pass</div>
           <div id="imp-url-preview" style="margin-top:6px"></div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:11px;font-weight:700">
@@ -1630,55 +1631,85 @@ function showImpView(view){
 }
 
 // Hanteras när användaren skriver i YouTube/Vimeo-URL-fältet i program-import-modalen.
-async function onImpUrlChange(url){
+// Stödjer en eller flera URLer (en per rad / komma-separerade) — varje video = ett pass.
+const MAX_PROGRAM_VIDEOS=10; // Begränsa pga Vercel body-limit + dyrt med Claude
+async function onImpUrlChange(urlText){
   const preview=document.getElementById('imp-url-preview');
-  const trimmed=(url||'').trim();
+  const trimmed=(urlText||'').trim();
   if(!trimmed){
     preview.innerHTML='';
-    // Rensa attachment om vi tidigare hade en URL-källa
     if(importAttachment&&importAttachment.type==='youtube'){
       importAttachment=null;
       document.getElementById('imp-file-status').textContent='';
     }
     return;
   }
-  const parsed=parseVideoUrl(trimmed);
-  if(!parsed){
-    preview.innerHTML=`<div style="font-size:11px;color:#e8200a;padding:4px 0">⚠️ Kunde inte tolka URL — stödjer YouTube och Vimeo</div>`;
+  // Parse flera URLer: en per rad eller komma-separerat
+  const lines=trimmed.split(/[\n,]+/).map(s=>s.trim()).filter(Boolean);
+  const parsedList=[];
+  const skipped=[];
+  for(const line of lines){
+    const parsed=parseVideoUrl(line);
+    if(parsed) parsedList.push({url:line,parsed});
+    else skipped.push(line);
+  }
+  if(!parsedList.length){
+    preview.innerHTML=`<div style="font-size:11px;color:#e8200a;padding:4px 0">⚠️ Kunde inte tolka någon URL — stödjer YouTube och Vimeo</div>`;
     if(importAttachment&&importAttachment.type==='youtube') importAttachment=null;
     return;
   }
-  preview.innerHTML=`<div style="font-size:11px;color:var(--text-2);padding:4px 0">⏳ Hämtar tumnagel och metadata…</div>`;
+  if(parsedList.length>MAX_PROGRAM_VIDEOS){
+    preview.innerHTML=`<div style="font-size:11px;color:#e8200a;padding:4px 0">⚠️ Max ${MAX_PROGRAM_VIDEOS} videoer per import (du angav ${parsedList.length}). Dela upp i flera omgångar.</div>`;
+    if(importAttachment&&importAttachment.type==='youtube') importAttachment=null;
+    return;
+  }
+  preview.innerHTML=`<div style="font-size:11px;color:var(--text-2);padding:4px 0">⏳ Hämtar tumnagel och metadata för ${parsedList.length} video${parsedList.length>1?'er':''}…</div>`;
   try{
     // Rensa fil-input om vi tidigare hade en fil
     document.getElementById('imp-file').value='';
     document.getElementById('imp-file-status').textContent='';
-    const thumbBlob=await fetchVideoThumbnailBlob(parsed);
-    if(!thumbBlob) throw new Error('Kunde inte hämta tumnagel');
-    const base64=await fileToBase64(thumbBlob);
-    const meta=await fetchVideoOembed(parsed);
+    const videos=[];
+    for(const {url,parsed} of parsedList){
+      try{
+        const thumbBlob=await fetchVideoThumbnailBlob(parsed);
+        if(!thumbBlob) throw new Error('ingen tumnagel');
+        const base64=await fileToBase64(thumbBlob);
+        const meta=await fetchVideoOembed(parsed);
+        videos.push({
+          mediaType:thumbBlob.type||'image/jpeg',
+          base64,
+          sourceUrl:url,
+          youtubeTitle:meta?.title||null,
+          youtubeAuthor:meta?.author_name||null,
+          provider:parsed.provider,
+          id:parsed.id
+        });
+      }catch(e){
+        console.warn('Skippar video',url,':',e.message);
+      }
+    }
+    if(!videos.length) throw new Error('Inga videoer kunde laddas');
     importAttachment={
       type:'youtube',
-      mediaType:thumbBlob.type||'image/jpeg',
-      base64,
-      name:`youtube-${parsed.id}.jpg`,
-      sizeMb:(thumbBlob.size/1048576).toFixed(2),
-      sourceUrl:trimmed,
-      youtubeTitle:meta?.title||null,
-      youtubeAuthor:meta?.author_name||null,
-      provider:parsed.provider
+      videos,
+      provider:videos[0].provider
     };
-    const title=importAttachment.youtubeTitle;
-    const author=importAttachment.youtubeAuthor;
+    const warn=skipped.length?`<div style="font-size:11px;color:#e8200a;padding:4px 0">⚠️ Hoppade över ${skipped.length} ogiltig${skipped.length>1?'a':''} URL${skipped.length>1?'er':''}</div>`:'';
     preview.innerHTML=`
-      <div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--surface-2);border-radius:var(--r-sm)">
-        <div style="font-size:24px;flex-shrink:0">${parsed.provider==='youtube'?'▶️':'🎬'}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:12px;font-weight:700;color:var(--accent-3)">✓ ${parsed.provider==='youtube'?'YouTube':'Vimeo'}-länk redo</div>
-          ${title?`<div style="font-size:11px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(title)}${author?' · '+escapeHtml(author):''}</div>`:`<div style="font-size:10px;color:var(--text-3)">ID: ${parsed.id}</div>`}
-        </div>
+      ${warn}
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${videos.map((v,i)=>`
+          <div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--surface-2);border-radius:var(--r-sm)">
+            <div style="background:var(--accent-3);color:white;font-size:11px;font-weight:800;padding:2px 7px;border-radius:var(--r-pill);flex-shrink:0">${i+1}</div>
+            <div style="font-size:20px;flex-shrink:0">${v.provider==='youtube'?'▶️':'🎬'}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v.youtubeTitle?escapeHtml(v.youtubeTitle):'Video '+v.id}</div>
+              ${v.youtubeAuthor?`<div style="font-size:10px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(v.youtubeAuthor)}</div>`:''}
+            </div>
+          </div>
+        `).join('')}
       </div>
-      <div class="notice" style="font-size:11px;margin-top:6px;line-height:1.5">💡 <b>Tips:</b> AI får bara tumnagelbild + titel, så för bästa resultat — skriv i textrutan nedan vilka övningar som ingår, antal set/reps eller typ av pass.</div>
+      <div class="notice" style="font-size:11px;margin-top:6px;line-height:1.5">💡 <b>${videos.length} video${videos.length>1?'er = ' + videos.length + ' pass':' = 1 pass'}</b>. AI tolkar tumnagel + titel — för exaktare resultat: skriv övningslistor i textrutan nedan.</div>
     `;
   }catch(e){
     console.error('YouTube-preview misslyckades:',e);
@@ -1750,25 +1781,37 @@ Viktigt:
     // Bygg messages — beroende på vad användaren skickade
     let messages;
     if(importAttachment&&importAttachment.type==='youtube'){
-      // YouTube-källa: tumnagel som image-block + extra YouTube-kontext i text
-      const blocks=[
-        {
+      // YouTube-källa: en eller flera videos. Varje video = ett pass.
+      const videos=importAttachment.videos||[];
+      const blocks=[];
+      for(const v of videos){
+        blocks.push({
           type:'image',
           source:{
             type:'base64',
-            media_type:importAttachment.mediaType,
-            data:importAttachment.base64
+            media_type:v.mediaType,
+            data:v.base64
           }
-        }
-      ];
-      let instr=`Detta är en tumnagel från en ${importAttachment.provider==='youtube'?'YouTube':'Vimeo'}-video som visar ett träningspass med flera övningar.`;
-      if(importAttachment.youtubeTitle) instr+=`\n\nVideotitel: "${importAttachment.youtubeTitle}"`;
-      if(importAttachment.youtubeAuthor) instr+=`\nKanal: ${importAttachment.youtubeAuthor}`;
-      instr+=`\n\nStrukturera passet/passen till JSON enligt formatet i system-prompten. Använd titeln som STARK ledtråd för passnamn och struktur (t.ex. "20 min HIIT - 10 övningar" → 10 övningar med rimliga tider).`;
-      if(text){
-        instr+=`\n\nExtra instruktioner/övningslista från användaren (använd som primär källa när det finns):\n${text}`;
+        });
+      }
+      let instr;
+      if(videos.length>1){
+        instr=`Detta är ${videos.length} tumnagelbilder från olika YouTube/Vimeo-träningsvideor. VARJE VIDEO MOTSVARAR ETT SEPARAT PASS — du ska returnera exakt ${videos.length} pass-objekt i passes-arrayen, ETT per video, i samma ordning som videorna nedan.\n\nVideor i ordning:`;
+        videos.forEach((v,i)=>{
+          instr+=`\n${i+1}. ${v.youtubeTitle?'"'+v.youtubeTitle+'"':'(saknar titel)'}${v.youtubeAuthor?' — '+v.youtubeAuthor:''}`;
+        });
+        instr+=`\n\nAnvänd titlarna som STARK ledtråd för pass-namn och struktur.`;
       }else{
-        instr+=`\n\nOBS: användaren har inte skrivit in övningslistan, så du måste gissa baserat på titeln. Markera tydligt i pass-beskrivningen att övningarna är AI:s gissning och bör verifieras.`;
+        const v=videos[0];
+        instr=`Detta är en tumnagel från en ${v.provider==='youtube'?'YouTube':'Vimeo'}-video som visar ett träningspass.`;
+        if(v.youtubeTitle) instr+=`\n\nVideotitel: "${v.youtubeTitle}"`;
+        if(v.youtubeAuthor) instr+=`\nKanal: ${v.youtubeAuthor}`;
+        instr+=`\n\nStrukturera passet till JSON enligt formatet i system-prompten. Använd titeln som STARK ledtråd för passnamn och struktur (t.ex. "20 min HIIT - 10 övningar" → 10 övningar med rimliga tider).`;
+      }
+      if(text){
+        instr+=`\n\nExtra instruktioner/övningslistor från användaren (använd som PRIMÄR källa när det finns):\n${text}`;
+      }else{
+        instr+=`\n\nOBS: användaren har inte skrivit in övningslistan, så du måste gissa övningar baserat på titel/tumnagel. Lägg en kort markering i pass-beskrivningen att övningarna är AI:s gissning och bör verifieras.`;
       }
       blocks.push({type:'text',text:instr});
       messages=[{role:'user',content:blocks}];
