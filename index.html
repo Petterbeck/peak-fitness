@@ -624,6 +624,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
   <div class="card" style="margin-top:4px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <i class="ti ti-shield-check" style="font-size:18px;color:var(--accent-3)"></i>
+      <div style="font-size:14px;font-weight:700">Säkerhetskopia</div>
+    </div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:10px">Ladda ner all din data som en fil — din egen backup, oberoende av molnet. Återställ från fil om något skulle gå fel.</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn-sm btn-acc" onclick="exportData()" style="flex:1;min-width:120px"><i class="ti ti-download"></i> Exportera data</button>
+      <button class="btn-sm" onclick="document.getElementById('import-data-file').click()" style="flex:1;min-width:120px;background:var(--surface-2);color:var(--text-1)"><i class="ti ti-upload"></i> Återställ från fil</button>
+      <input type="file" id="import-data-file" accept="application/json,.json" onchange="importDataFromFile(this)" style="display:none">
+    </div>
+    <button class="btn-sm" onclick="restoreAutoBackup()" style="width:100%;margin-top:6px;background:var(--surface-2);color:var(--text-2);font-size:11px"><i class="ti ti-history"></i> Återställ senaste auto-backup</button>
+    <div id="backup-status" style="font-size:11px;color:var(--text-2);margin-top:8px;min-height:14px;text-align:center"></div>
+  </div>
+  <div class="card" style="margin-top:4px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
       <i class="ti ti-sparkles" style="font-size:18px;color:var(--accent-4)"></i>
       <div style="font-size:14px;font-weight:700">AI-coach (test)</div>
     </div>
@@ -3420,6 +3434,9 @@ function renderLastSync(){
 async function loadFromCloud(silent){
   if(!supa||!currentUser){if(!silent) setSyncStatus('Inte inloggad','err');return false;}
   if(!silent) setSyncStatus('Hämtar från molnet...');
+  // Auto-backup av nuvarande lokala data INNAN vi (potentiellt) skriver över den.
+  // Skyddsnät om molnet skulle vara ofullständigt — kan återställas via "Återställ senaste auto-backup".
+  saveAutoBackup();
   try{
     const [tfRes,exRes,ptRes,pwRes,whRes,prRes,ugRes]=await Promise.all([
       supa.from('training_forms').select('*'),
@@ -3430,6 +3447,13 @@ async function loadFromCloud(silent){
       supa.from('profiles').select('*').eq('id',currentUser.id).maybeSingle(),
       supa.from('user_goals').select('*')
     ]);
+    // Robusthet: om en KRITISK tabell-hämtning failade, avbryt INNAN vi skriver över lokal data.
+    // (Annars riskerar vi att ersätta bra lokal data med ofullständigt moln.)
+    const critical=[['training_forms',tfRes],['exercises',exRes],['pass_types',ptRes],['planned_workouts',pwRes],['workout_history',whRes]];
+    const failed=critical.find(([_,res])=>res&&res.error);
+    if(failed){
+      throw new Error(`Kunde inte hämta ${failed[0]} (${failed[1].error.message}). Avbröt för att skydda din lokala data.`);
+    }
     // User goals — hämta in om finns
     if(ugRes&&Array.isArray(ugRes.data)&&ugRes.data.length){
       userGoals.length=0;
@@ -3501,6 +3525,103 @@ async function loadFromCloud(silent){
     console.error('Load failed:',e);
     if(!silent) setSyncStatus('Fel: '+(e.message||'okänt'),'err');
     return false;
+  }
+}
+
+/* ========== SÄKERHETSKOPIA (export/import/auto-backup) ========== */
+// Samla all användardata till ett objekt
+function collectAllData(){
+  return {
+    app:'peak-fitness',
+    version:1,
+    exportedAt:new Date().toISOString(),
+    userProfile,
+    trainingForms,
+    exercises,
+    plannedWorkouts,
+    workoutHistory,
+    userGoals
+  };
+}
+
+// Spara en auto-backup av nuvarande state till localStorage (en enda, roteras)
+function saveAutoBackup(){
+  try{
+    // Hoppa över om allt är tomt (inget att backa upp)
+    if(!trainingForms.length&&!exercises.length&&!workoutHistory.length) return;
+    localStorage.setItem('peak_autobackup',JSON.stringify({savedAt:new Date().toISOString(),data:collectAllData()}));
+  }catch(e){console.warn('Auto-backup misslyckades:',e.message);}
+}
+
+// Ladda ner all data som en JSON-fil
+function exportData(){
+  const status=document.getElementById('backup-status');
+  try{
+    const data=collectAllData();
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=`peak-fitness-backup-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    if(status){status.style.color='var(--accent-3)';status.textContent='✓ Backup nedladdad ('+exercises.length+' övningar, '+workoutHistory.length+' loggade pass)';}
+  }catch(e){
+    if(status){status.style.color='#e8200a';status.textContent='❌ '+e.message;}
+  }
+}
+
+// Återställ all data från ett objekt (gemensam för fil-import och auto-backup)
+function restoreAllData(data){
+  if(!data||data.app!=='peak-fitness') throw new Error('Ogiltig backup-fil (fel format)');
+  if(data.userProfile) Object.assign(userProfile,data.userProfile);
+  if(Array.isArray(data.trainingForms)){trainingForms.length=0;data.trainingForms.forEach(x=>trainingForms.push(x));}
+  if(Array.isArray(data.exercises)){exercises.length=0;data.exercises.forEach(x=>exercises.push(x));}
+  if(Array.isArray(data.userGoals)){userGoals.length=0;data.userGoals.forEach(x=>userGoals.push(x));}
+  if(Array.isArray(data.plannedWorkouts)) plannedWorkouts=data.plannedWorkouts;
+  if(Array.isArray(data.workoutHistory)) workoutHistory=data.workoutHistory;
+  saveState();
+  // Refresh alla vyer
+  renderHomeHero();renderHomeStats();renderStreak();renderProfileInfo();renderCalendar();renderWeekSchedule();renderPassList();renderExercises();renderGoals();
+}
+
+// Återställ från en uppladdad fil
+async function importDataFromFile(input){
+  const file=input.files?.[0];
+  const status=document.getElementById('backup-status');
+  if(!file) return;
+  if(!confirm('Detta ERSÄTTER din nuvarande data med innehållet i filen. (En auto-backup tas först.) Fortsätt?')){input.value='';return;}
+  try{
+    saveAutoBackup(); // skyddsnät innan vi skriver över
+    const text=await file.text();
+    const data=JSON.parse(text);
+    restoreAllData(data);
+    if(status){status.style.color='var(--accent-3)';status.textContent='✓ Data återställd från fil. Synkar till molnet…';}
+    // Synka den återställda datan till molnet
+    if(supa&&currentUser) await syncToCloud(true);
+    if(status) status.textContent='✓ Data återställd och synkad';
+  }catch(e){
+    if(status){status.style.color='#e8200a';status.textContent='❌ Kunde inte läsa filen: '+e.message;}
+  }
+  input.value='';
+}
+
+// Återställ från den automatiska backupen (tagen före senaste molnhämtning)
+function restoreAutoBackup(){
+  const status=document.getElementById('backup-status');
+  try{
+    const raw=localStorage.getItem('peak_autobackup');
+    if(!raw){if(status){status.style.color='#e8200a';status.textContent='Ingen auto-backup hittades än';}return;}
+    const backup=JSON.parse(raw);
+    const when=backup.savedAt?new Date(backup.savedAt).toLocaleString('sv-SE'):'okänt';
+    if(!confirm(`Återställ data från auto-backup tagen ${when}? Detta ersätter din nuvarande data.`)) return;
+    restoreAllData(backup.data);
+    if(status){status.style.color='var(--accent-3)';status.textContent='✓ Återställd från auto-backup ('+when+')';}
+    if(supa&&currentUser) syncToCloud(true);
+  }catch(e){
+    if(status){status.style.color='#e8200a';status.textContent='❌ '+e.message;}
   }
 }
 
