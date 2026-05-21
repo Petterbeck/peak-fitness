@@ -688,6 +688,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Ladda upp en fil eller klistra in text. AI tolkar och föreslår pass + övningar — du verifierar innan import.</div>
       <div style="display:flex;flex-direction:column;gap:12px">
         <div>
+          <label class="field-label">YouTube/Vimeo-länk (för pass-video)</label>
+          <input class="field-input" id="imp-url-input" placeholder="https://www.youtube.com/watch?v=..." oninput="onImpUrlChange(this.value)">
+          <div id="imp-url-preview" style="margin-top:6px"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:11px;font-weight:700">
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+          <span>ELLER LADDA UPP FIL</span>
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+        </div>
+        <div>
           <label class="field-label">Ladda upp fil (PDF / bild / Excel / CSV / text)</label>
           <div id="imp-file-zone" onclick="document.getElementById('imp-file').click()" style="border:2px dashed var(--border-md);border-radius:var(--r);padding:18px 12px;text-align:center;cursor:pointer;transition:all 0.18s;background:var(--surface)">
             <div style="font-size:28px;line-height:1;margin-bottom:6px"><i class="ti ti-upload" style="color:var(--accent-4)"></i></div>
@@ -1340,6 +1350,10 @@ function openImportProgram(){
   document.getElementById('imp-tag').value='';
   document.getElementById('imp-file-status').textContent='';
   document.getElementById('imp-file').value='';
+  const urlInput=document.getElementById('imp-url-input');
+  if(urlInput) urlInput.value='';
+  const urlPrev=document.getElementById('imp-url-preview');
+  if(urlPrev) urlPrev.innerHTML='';
   importAttachment=null;
   showImpView('input');
   setupImportDropAndPaste();
@@ -1503,6 +1517,11 @@ async function onImportFileChange(input){
   const sizeMb=(sizeBytes/1048576).toFixed(2);
   status.style.color='var(--text-2)';
   status.textContent=`⏳ Läser ${name} (${sizeMb} MB)…`;
+  // Rensa URL-state — fil-upload ersätter YouTube-flowet
+  const urlInput=document.getElementById('imp-url-input');
+  if(urlInput) urlInput.value='';
+  const urlPrev=document.getElementById('imp-url-preview');
+  if(urlPrev) urlPrev.innerHTML='';
   importAttachment=null;
   try{
     const ext=name.split('.').pop().toLowerCase();
@@ -1610,6 +1629,64 @@ function showImpView(view){
   });
 }
 
+// Hanteras när användaren skriver i YouTube/Vimeo-URL-fältet i program-import-modalen.
+async function onImpUrlChange(url){
+  const preview=document.getElementById('imp-url-preview');
+  const trimmed=(url||'').trim();
+  if(!trimmed){
+    preview.innerHTML='';
+    // Rensa attachment om vi tidigare hade en URL-källa
+    if(importAttachment&&importAttachment.type==='youtube'){
+      importAttachment=null;
+      document.getElementById('imp-file-status').textContent='';
+    }
+    return;
+  }
+  const parsed=parseVideoUrl(trimmed);
+  if(!parsed){
+    preview.innerHTML=`<div style="font-size:11px;color:#e8200a;padding:4px 0">⚠️ Kunde inte tolka URL — stödjer YouTube och Vimeo</div>`;
+    if(importAttachment&&importAttachment.type==='youtube') importAttachment=null;
+    return;
+  }
+  preview.innerHTML=`<div style="font-size:11px;color:var(--text-2);padding:4px 0">⏳ Hämtar tumnagel och metadata…</div>`;
+  try{
+    // Rensa fil-input om vi tidigare hade en fil
+    document.getElementById('imp-file').value='';
+    document.getElementById('imp-file-status').textContent='';
+    const thumbBlob=await fetchVideoThumbnailBlob(parsed);
+    if(!thumbBlob) throw new Error('Kunde inte hämta tumnagel');
+    const base64=await fileToBase64(thumbBlob);
+    const meta=await fetchVideoOembed(parsed);
+    importAttachment={
+      type:'youtube',
+      mediaType:thumbBlob.type||'image/jpeg',
+      base64,
+      name:`youtube-${parsed.id}.jpg`,
+      sizeMb:(thumbBlob.size/1048576).toFixed(2),
+      sourceUrl:trimmed,
+      youtubeTitle:meta?.title||null,
+      youtubeAuthor:meta?.author_name||null,
+      provider:parsed.provider
+    };
+    const title=importAttachment.youtubeTitle;
+    const author=importAttachment.youtubeAuthor;
+    preview.innerHTML=`
+      <div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--surface-2);border-radius:var(--r-sm)">
+        <div style="font-size:24px;flex-shrink:0">${parsed.provider==='youtube'?'▶️':'🎬'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:700;color:var(--accent-3)">✓ ${parsed.provider==='youtube'?'YouTube':'Vimeo'}-länk redo</div>
+          ${title?`<div style="font-size:11px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(title)}${author?' · '+escapeHtml(author):''}</div>`:`<div style="font-size:10px;color:var(--text-3)">ID: ${parsed.id}</div>`}
+        </div>
+      </div>
+      <div class="notice" style="font-size:11px;margin-top:6px;line-height:1.5">💡 <b>Tips:</b> AI får bara tumnagelbild + titel, så för bästa resultat — skriv i textrutan nedan vilka övningar som ingår, antal set/reps eller typ av pass.</div>
+    `;
+  }catch(e){
+    console.error('YouTube-preview misslyckades:',e);
+    preview.innerHTML=`<div style="font-size:11px;color:#e8200a;padding:4px 0">❌ ${escapeHtml(e.message)}</div>`;
+    if(importAttachment&&importAttachment.type==='youtube') importAttachment=null;
+  }
+}
+
 async function analyzeImport(){
   const text=document.getElementById('imp-text').value.trim();
   const prefix=document.getElementById('imp-prefix').value.trim();
@@ -1670,12 +1747,36 @@ Viktigt:
 - Översätt övningar till svenska om de är på annat språk
 - Om en övning är "8x400m" → sets=8, distance=0.4, time=null, primaryForm=running, muscle=Kondition`;
   try{
-    // Bygg messages — om en fil är uppladdad skickar vi den som document/image-block
+    // Bygg messages — beroende på vad användaren skickade
     let messages;
-    if(importAttachment){
+    if(importAttachment&&importAttachment.type==='youtube'){
+      // YouTube-källa: tumnagel som image-block + extra YouTube-kontext i text
       const blocks=[
         {
-          type:importAttachment.type, // 'document' eller 'image'
+          type:'image',
+          source:{
+            type:'base64',
+            media_type:importAttachment.mediaType,
+            data:importAttachment.base64
+          }
+        }
+      ];
+      let instr=`Detta är en tumnagel från en ${importAttachment.provider==='youtube'?'YouTube':'Vimeo'}-video som visar ett träningspass med flera övningar.`;
+      if(importAttachment.youtubeTitle) instr+=`\n\nVideotitel: "${importAttachment.youtubeTitle}"`;
+      if(importAttachment.youtubeAuthor) instr+=`\nKanal: ${importAttachment.youtubeAuthor}`;
+      instr+=`\n\nStrukturera passet/passen till JSON enligt formatet i system-prompten. Använd titeln som STARK ledtråd för passnamn och struktur (t.ex. "20 min HIIT - 10 övningar" → 10 övningar med rimliga tider).`;
+      if(text){
+        instr+=`\n\nExtra instruktioner/övningslista från användaren (använd som primär källa när det finns):\n${text}`;
+      }else{
+        instr+=`\n\nOBS: användaren har inte skrivit in övningslistan, så du måste gissa baserat på titeln. Markera tydligt i pass-beskrivningen att övningarna är AI:s gissning och bör verifieras.`;
+      }
+      blocks.push({type:'text',text:instr});
+      messages=[{role:'user',content:blocks}];
+    }else if(importAttachment){
+      // PDF/bild från fil-upload
+      const blocks=[
+        {
+          type:importAttachment.type,
           source:{
             type:'base64',
             media_type:importAttachment.mediaType,
