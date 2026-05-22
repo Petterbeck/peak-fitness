@@ -691,7 +691,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div style="display:flex;flex-direction:column;gap:12px">
       <div><label class="field-label">Namn</label><input class="field-input" id="nf-name" placeholder="T.ex. Cykling"></div>
       <div><label class="field-label">Ikon</label><input class="field-input" id="nf-icon" placeholder="🚴" value="💪"></div>
-      <div><label class="field-label">Kategori</label><select class="field-select" id="nf-cat"><option value="strength">Styrketräning</option><option value="cardio">Kondition</option><option value="bodyweight">Egen vikt</option><option value="mobility">Rörlighet/Yoga</option></select></div>
+      <div><label class="field-label">Kategori</label><select class="field-select" id="nf-cat"><option value="strength">Styrketräning</option><option value="cardio">Kondition</option><option value="mobility">Rörlighet/Yoga</option></select></div>
       <button class="btn-primary" onclick="addForm()"><i class="ti ti-check"></i> Skapa</button>
     </div>
   </div>
@@ -2749,7 +2749,8 @@ function applyExAnalyze(){
   closeModal('m-ex-analyze');
 }
 
-const PRIMARY_TO_FORM_CAT={strength:'strength',bodyweight:'bodyweight',running:'cardio',cycling:'cardio',mobility:'mobility',group:'strength',other:'strength'};
+// bodyweight→strength: egenvikt är inte längre en egen träningsform, utan en del av Styrketräning (distinktionen lever på övningsnivå)
+const PRIMARY_TO_FORM_CAT={strength:'strength',bodyweight:'strength',running:'cardio',cycling:'cardio',mobility:'mobility',group:'strength',other:'strength'};
 
 function guessTrainingForm(primaryForm){
   const cat=PRIMARY_TO_FORM_CAT[primaryForm]||'strength';
@@ -3650,6 +3651,8 @@ async function loadFromCloud(silent){
       id:w.id,passName:w.pass_name,formName:w.form_name,formCat:w.form_cat,
       date:w.performed_at,duration:w.duration_seconds,feel:w.feel,note:w.note,exercises:w.exercises||[]
     }));
+    // Slå ihop egen-vikt-formen till Styrketräning även på moln-data (efter att pass + planerade pass byggts)
+    migrateMergeStrengthForms();
     saveState();
     // Nu har vi en färsk kopia av molnet → säkert att låta sync radera borttagna rader
     cloudLoadComplete=true;
@@ -3763,7 +3766,7 @@ function restoreAutoBackup(){
 
 /* ========== DATA ========== */
 const trainingForms=[
-  {id:'f1',name:'Styrketräning gym',icon:'🏋️',cat:'strength',passTypes:[
+  {id:'f1',name:'Styrketräning',icon:'🏋️',cat:'strength',passTypes:[
     {id:'p1',name:'Styrka A',desc:'Överkropp push/pull · bänk, chins, axelpress',color:'#5b52f0',exercises:{
       'Rygg':[{id:'e1',name:'Chins',sets:4,reps:8,cat:'bodyweight',fav:true},{id:'e2',name:'Rodd, skivstång',sets:4,reps:10,cat:'strength',fav:false},{id:'e3',name:'Sittande kabeldrag',sets:3,reps:12,cat:'strength',fav:false}],
       'Bröst':[{id:'e4',name:'Bänkpress',sets:5,reps:5,cat:'strength',fav:true},{id:'e5',name:'Lutad hantelpress',sets:3,reps:10,cat:'strength',fav:false}],
@@ -3778,6 +3781,11 @@ const trainingForms=[
       'Explosivitet':[{id:'e15',name:'Boxhopp',sets:5,reps:5,cat:'strength',fav:false},{id:'e16',name:'Medicinbollskast',sets:4,reps:8,cat:'bodyweight',fav:false},{id:'e17',name:'Längdhopp, stående',sets:4,reps:5,cat:'bodyweight',fav:true}],
       'Ben':[{id:'e18',name:'Power clean',sets:4,reps:4,cat:'strength',fav:false},{id:'e19',name:'Kettlebell swing',sets:4,reps:12,cat:'strength',fav:false}],
     }},
+    {id:'p7',name:'Kalistenikpass A',desc:'Chins, dips, armhävningar, brutalbänk',color:'#f5a800',exercises:{
+      'Rygg':[{id:'e27',name:'Chins, bred',sets:5,reps:6,cat:'bodyweight',fav:true},{id:'e28',name:'Australiensiska rader',sets:4,reps:12,cat:'bodyweight',fav:false}],
+      'Bröst':[{id:'e29',name:'Armhävningar',sets:5,reps:20,cat:'bodyweight',fav:true},{id:'e30',name:'Dips',sets:4,reps:12,cat:'bodyweight',fav:false},{id:'e31',name:'Brutalbänk',sets:3,reps:20,cat:'bodyweight',fav:false}],
+      'Bål':[{id:'e32',name:'L-sit',sets:3,reps:0,cat:'bodyweight',fav:false},{id:'e33',name:'Hollow body hold',sets:3,reps:0,cat:'bodyweight',fav:false}],
+    }},
   ]},
   {id:'f2',name:'Löpning',icon:'🏃',cat:'cardio',passTypes:[
     {id:'p4',name:'Intervall A · 400m',desc:'8 × 400m med 90 sek vila',color:'#00c896',exercises:{
@@ -3788,13 +3796,6 @@ const trainingForms=[
     }},
     {id:'p6',name:'Distans, lugnt',desc:'Lätt aerob bas · 5–10 km',color:'#00a8d6',exercises:{
       'Kondition':[{id:'e25',name:'5 km lätt',sets:1,reps:0,cat:'cardio',fav:true},{id:'e26',name:'10 km lugnt',sets:1,reps:0,cat:'cardio',fav:false}],
-    }},
-  ]},
-  {id:'f3',name:'Styrka, egen vikt',icon:'🤸',cat:'bodyweight',passTypes:[
-    {id:'p7',name:'Kalistenikpass A',desc:'Chins, dips, armhävningar, brutalbänk',color:'#f5a800',exercises:{
-      'Rygg':[{id:'e27',name:'Chins, bred',sets:5,reps:6,cat:'bodyweight',fav:true},{id:'e28',name:'Australiensiska rader',sets:4,reps:12,cat:'bodyweight',fav:false}],
-      'Bröst':[{id:'e29',name:'Armhävningar',sets:5,reps:20,cat:'bodyweight',fav:true},{id:'e30',name:'Dips',sets:4,reps:12,cat:'bodyweight',fav:false},{id:'e31',name:'Brutalbänk',sets:3,reps:20,cat:'bodyweight',fav:false}],
-      'Bål':[{id:'e32',name:'L-sit',sets:3,reps:0,cat:'bodyweight',fav:false},{id:'e33',name:'Hollow body hold',sets:3,reps:0,cat:'bodyweight',fav:false}],
     }},
   ]},
   {id:'f4',name:'Rörlighet / Yoga',icon:'🧘',cat:'mobility',passTypes:[
@@ -3881,6 +3882,38 @@ function migrateExercisesToPrimaryForm(){
     else ex.primaryForm='strength';
     changed=true;
   });
+  if(changed) saveState();
+}
+
+// Engångsmigration: slå ihop "Styrka, egen vikt"-formen (och ev. andra bodyweight-former)
+// in i en enda "Styrketräning"-form. Gym/egenvikt-distinktionen lever kvar på övningsnivå
+// (exercise.primaryForm). Strukturellt idempotent — när ingen bodyweight-form finns är den no-op.
+function migrateMergeStrengthForms(){
+  let changed=false;
+  // Målform: den enda Styrketräning-formen
+  let target=trainingForms.find(f=>f.name==='Styrketräning')
+           ||trainingForms.find(f=>f.name==='Styrketräning gym')
+           ||trainingForms.find(f=>f.cat==='strength');
+  // Bodyweight-former att slå in (default-namnet + ev. andra cat:'bodyweight')
+  const bw=trainingForms.filter(f=>f.name==='Styrka, egen vikt'||f.cat==='bodyweight');
+  if(!target&&bw.length) target=bw.shift(); // ingen strength-form? befordra första bw-formen
+  if(!target) return; // inget att göra
+  if(target.name!=='Styrketräning'){target.name='Styrketräning';target.icon='🏋️';target.cat='strength';changed=true;}
+  bw.forEach(f=>{
+    if(f===target) return;
+    (f.passTypes||[]).forEach(p=>{
+      target.passTypes.push(p); // samma pass-id → moln-raden uppdateras vid sync (ingen orphan)
+      plannedWorkouts.forEach(pw=>{if(pw.formId===f.id) pw.formId=target.id;}); // peka om planerade pass
+    });
+    f.passTypes=[];
+  });
+  // Ta bort de tömda bodyweight-formerna (utom målet)
+  for(let i=trainingForms.length-1;i>=0;i--){
+    const f=trainingForms[i];
+    if(f!==target&&(f.name==='Styrka, egen vikt'||(f.cat==='bodyweight'&&!(f.passTypes||[]).length))){
+      trainingForms.splice(i,1);changed=true;
+    }
+  }
   if(changed) saveState();
 }
 
@@ -6361,6 +6394,7 @@ function getCurrentPrimaryForm(){
 loadState();
 migrateNestedToBank();
 migrateExercisesToPrimaryForm();
+migrateMergeStrengthForms();
 migrateGoalsAddIds();
 saveState();
 populateExModal();
