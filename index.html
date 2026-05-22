@@ -760,6 +760,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <div class="modal-title" style="margin:0;flex:1;font-size:15px">Förhandsvisning</div>
       </div>
       <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:10px">AI tolkade <b id="imp-pass-count">0</b> pass. Bocka av sådana du inte vill importera och justera träningsform per pass om något blev fel.</div>
+      <div id="imp-batch-warning"></div>
       <div id="imp-preview-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
       <button class="btn-primary" onclick="confirmImport()" style="width:100%"><i class="ti ti-check"></i> Importera valda pass</button>
     </div>
@@ -1444,6 +1445,7 @@ function renderProfileInfo(){
 
 /* ========== PROGRAM-IMPORT (AI) ========== */
 let importedData=null;
+let importBatchWarning=''; // sätts om någon batch misslyckades vid stor import
 
 // Lagrar uppladdad PDF/bild som base64 så AI kan tolka filen direkt (utan text-extraktion i frontend)
 let importAttachment=null; // {type:'document'|'image', mediaType, base64, name, sizeMb}
@@ -1925,6 +1927,21 @@ function importFileBlock(){
   };
 }
 
+// Anropa Claude med automatiskt återförsök — Anthropic kan vara tillfälligt överbelastad (529) eller timeouta
+async function callClaudeWithRetry(messages,options,retries=2){
+  let lastErr;
+  for(let attempt=0;attempt<=retries;attempt++){
+    try{
+      return await callClaude(messages,options);
+    }catch(e){
+      lastErr=e;
+      console.warn(`callClaude försök ${attempt+1}/${retries+1} misslyckades:`,e.message);
+      if(attempt<retries) await new Promise(r=>setTimeout(r,1500*(attempt+1)));
+    }
+  }
+  throw lastErr;
+}
+
 // Analysera en PDF/bild i två faser för att hålla varje svar litet nog att hinna inom Vercel-timeout (60s).
 // Fas 1: lista alla pass-namn (litet svar). Fas 2: detaljera passen i grupper om 4.
 async function analyzeFileInBatches(systemPrompt,userText){
@@ -1943,22 +1960,27 @@ async function analyzeFileInBatches(systemPrompt,userText){
   // ---- FAS 2: detaljera i batchar ----
   const BATCH=4;
   const allPasses=[];
+  const failedBatches=[];
   for(let i=0;i<passNames.length;i+=BATCH){
     const batch=passNames.slice(i,i+BATCH);
     const from=i+1,to=Math.min(i+BATCH,passNames.length);
     if(loadingDetail) loadingDetail.textContent=`Steg 2/2: Detaljerar pass ${from}–${to} av ${passNames.length}…`;
     const detailInstr=`Från detta träningsprogram: detaljera ENBART följande pass (exakt dessa, i denna ordning): ${batch.map(n=>'"'+n+'"').join(', ')}.\n\nFör VARJE pass: ta med ALLA övningar som faktiskt står i programmet för det passet, exakt som de står, i rätt ordning. Hitta inte på övningar. Returnera JSON enligt formatet i system-prompten med en "passes"-array som innehåller exakt dessa ${batch.length} pass.${userText?'\n\nAnvändarens info: '+userText:''}`;
     const detailMsg=[{role:'user',content:[fileBlock,{type:'text',text:detailInstr}]}];
-    const detailRes=await callClaude(detailMsg,{system:systemPrompt,max_tokens:8000});
     try{
+      const detailRes=await callClaudeWithRetry(detailMsg,{system:systemPrompt,max_tokens:8000});
       const batchData=parseClaudeJson(detailRes.text);
       if(batchData.passes&&Array.isArray(batchData.passes)) allPasses.push(...batchData.passes);
+      else failedBatches.push(`${from}-${to}`);
     }catch(e){
-      console.warn(`Kunde inte tolka batch ${from}-${to}:`,e.message);
-      // Fortsätt med övriga batchar — bättre att få NÅGRA pass än inga
+      console.warn(`Batch ${from}-${to} misslyckades helt:`,e.message);
+      failedBatches.push(`${from}-${to}`);
     }
   }
-  if(!allPasses.length) throw new Error('Kunde inte detaljera passen. Försök igen eller dela upp programmet.');
+  if(!allPasses.length) throw new Error('Kunde inte detaljera passen (alla delförsök misslyckades). Försök igen om en stund.');
+  // Spara info om misslyckade batchar så vi kan varna i preview
+  if(failedBatches.length) importBatchWarning=`⚠️ ${failedBatches.length} grupp(er) kunde inte hämtas (pass ${failedBatches.join(', ')}). ${allPasses.length} pass kom med — kör importen igen för resten om du vill.`;
+  else importBatchWarning='';
   return {passes:allPasses};
 }
 
@@ -2706,6 +2728,9 @@ function guessTrainingForm(primaryForm){
 function renderImportPreview(){
   const {data,prefix,tag}=importedData;
   document.getElementById('imp-pass-count').textContent=data.passes.length;
+  // Visa varning om någon batch misslyckades vid stor import
+  const warnEl=document.getElementById('imp-batch-warning');
+  if(warnEl) warnEl.innerHTML=importBatchWarning?`<div class="notice" style="font-size:11px;background:rgba(232,32,10,0.08);border-color:#e8200a;color:#e8200a;line-height:1.5;margin-bottom:8px">${escapeHtml(importBatchWarning)}</div>`:'';
   const formOptions=trainingForms.map(f=>`<option value="${f.id}">${f.icon} ${f.name}</option>`).join('')+'<option value="__new__">+ Skapa ny träningsform</option>';
   const html=data.passes.map((p,i)=>{
     const defaultForm=guessTrainingForm(p.primaryForm);
@@ -3309,8 +3334,16 @@ async function callClaude(input,options={}){
   });
   if(!res.ok){
     let err='HTTP '+res.status;
-    try{const j=await res.json();err=j.error||JSON.stringify(j);}catch(_){}
-    throw new Error(err);
+    try{
+      const j=await res.json();
+      // Anthropic-fel kan vara {error:{type,message}} eller {error:"sträng"} — plocka ut läsbar text
+      if(j&&j.error){
+        err=typeof j.error==='string'?j.error:(j.error.message||j.error.type||JSON.stringify(j.error));
+      }else if(j){
+        err=typeof j==='string'?j:JSON.stringify(j);
+      }
+    }catch(_){}
+    throw new Error('HTTP '+res.status+': '+err);
   }
   const data=await res.json();
   const text=data.content?.[0]?.text||'';
