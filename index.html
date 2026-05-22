@@ -1919,11 +1919,14 @@ Viktigt:
   }
 }
 
-// Bygg fil-blocket (PDF/bild) som skickas med varje anrop
+// Bygg fil-blocket (PDF/bild) som skickas med varje anrop.
+// cache_control: prompt caching — PDF:en skickas/tolkas en gång och återanvänds av
+// efterföljande batch-anrop (snabbare, billigare, undviker rate-limit på stora program).
 function importFileBlock(){
   return {
     type:importAttachment.type,
-    source:{type:'base64',media_type:importAttachment.mediaType,data:importAttachment.base64}
+    source:{type:'base64',media_type:importAttachment.mediaType,data:importAttachment.base64},
+    cache_control:{type:'ephemeral'}
   };
 }
 
@@ -1961,9 +1964,17 @@ async function analyzeFileInBatches(systemPrompt,userText){
   const BATCH=4;
   const allPasses=[];
   const failedBatches=[];
+  let batchIndex=0;
   for(let i=0;i<passNames.length;i+=BATCH){
     const batch=passNames.slice(i,i+BATCH);
     const from=i+1,to=Math.min(i+BATCH,passNames.length);
+    // Paus mellan anrop för att sprida token-användningen (undvik rate-limit på stora program).
+    // Caching gör efterföljande PDF-läsningar billiga, men token-per-minut-gränsen kan ändå slå till.
+    if(batchIndex>0){
+      if(loadingDetail) loadingDetail.textContent=`Väntar kort för att undvika hastighetsgräns… (pass ${from}–${to} av ${passNames.length})`;
+      await new Promise(r=>setTimeout(r,4000));
+    }
+    batchIndex++;
     if(loadingDetail) loadingDetail.textContent=`Steg 2/2: Detaljerar pass ${from}–${to} av ${passNames.length}…`;
     const detailInstr=`Från detta träningsprogram: detaljera ENBART följande pass (exakt dessa, i denna ordning): ${batch.map(n=>'"'+n+'"').join(', ')}.\n\nFör VARJE pass: ta med ALLA övningar som faktiskt står i programmet för det passet, exakt som de står, i rätt ordning. Hitta inte på övningar. Returnera JSON enligt formatet i system-prompten med en "passes"-array som innehåller exakt dessa ${batch.length} pass.${userText?'\n\nAnvändarens info: '+userText:''}`;
     const detailMsg=[{role:'user',content:[fileBlock,{type:'text',text:detailInstr}]}];
