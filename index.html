@@ -1892,65 +1892,18 @@ Viktigt:
 - Översätt övningar till svenska om de är på annat språk
 - Om en övning är "8x400m" → sets=8, distance=0.4, time=null, primaryForm=running, muscle=Kondition`;
   try{
-    // Bygg messages — beroende på vad användaren skickade
-    let messages;
+    let data;
     if(importAttachment&&importAttachment.type==='youtube'){
-      // YouTube-källa: en eller flera videos. Varje video = ett pass.
-      const videos=importAttachment.videos||[];
-      const blocks=[];
-      for(const v of videos){
-        blocks.push({
-          type:'image',
-          source:{
-            type:'base64',
-            media_type:v.mediaType,
-            data:v.base64
-          }
-        });
-      }
-      let instr;
-      if(videos.length>1){
-        instr=`Detta är ${videos.length} tumnagelbilder från olika YouTube/Vimeo-träningsvideor. VARJE VIDEO MOTSVARAR ETT SEPARAT PASS — du ska returnera exakt ${videos.length} pass-objekt i passes-arrayen, ETT per video, i samma ordning som videorna nedan.\n\nVideor i ordning:`;
-        videos.forEach((v,i)=>{
-          instr+=`\n${i+1}. ${v.youtubeTitle?'"'+v.youtubeTitle+'"':'(saknar titel)'}${v.youtubeAuthor?' — '+v.youtubeAuthor:''}`;
-        });
-        instr+=`\n\nAnvänd titlarna som STARK ledtråd för pass-namn och struktur.`;
-      }else{
-        const v=videos[0];
-        instr=`Detta är en tumnagel från en ${v.provider==='youtube'?'YouTube':'Vimeo'}-video som visar ett träningspass.`;
-        if(v.youtubeTitle) instr+=`\n\nVideotitel: "${v.youtubeTitle}"`;
-        if(v.youtubeAuthor) instr+=`\nKanal: ${v.youtubeAuthor}`;
-        instr+=`\n\nStrukturera passet till JSON enligt formatet i system-prompten. Använd titeln som STARK ledtråd för passnamn och struktur (t.ex. "20 min HIIT - 10 övningar" → 10 övningar med rimliga tider).`;
-      }
-      if(text){
-        instr+=`\n\nExtra instruktioner/övningslistor från användaren (använd som PRIMÄR källa när det finns):\n${text}`;
-      }else{
-        instr+=`\n\nOBS: användaren har inte skrivit in övningslistan, så du måste gissa övningar baserat på titel/tumnagel. Lägg en kort markering i pass-beskrivningen att övningarna är AI:s gissning och bör verifieras.`;
-      }
-      blocks.push({type:'text',text:instr});
-      messages=[{role:'user',content:blocks}];
+      // YouTube-källa: en eller flera videos. Varje video = ett pass. (Litet svar — ett anrop.)
+      data=await analyzeYoutubeImport(systemPrompt,text);
     }else if(importAttachment){
-      // PDF/bild från fil-upload
-      const blocks=[
-        {
-          type:importAttachment.type,
-          source:{
-            type:'base64',
-            media_type:importAttachment.mediaType,
-            data:importAttachment.base64
-          }
-        }
-      ];
-      const instr=text
-        ?`Strukturera detta träningsprogram till JSON enligt formatet i system-prompten. Ignorera inledande brödtext och förklaringar — extrahera bara konkreta pass och övningar.\n\nExtra instruktioner från användaren: ${text}`
-        :'Strukturera detta träningsprogram till JSON enligt formatet i system-prompten. Ignorera inledande brödtext och förklaringar — extrahera bara konkreta pass och övningar.';
-      blocks.push({type:'text',text:instr});
-      messages=[{role:'user',content:blocks}];
+      // PDF/bild-fil: batch-strategi för att undvika timeout på stora program
+      data=await analyzeFileInBatches(systemPrompt,text);
     }else{
-      messages=[{role:'user',content:text}];
+      // Ren text — ett anrop räcker (användaren ser storleken själv)
+      const result=await callClaude([{role:'user',content:text}],{system:systemPrompt,max_tokens:16384});
+      data=parseClaudeJson(result.text);
     }
-    const result=await callClaude(messages,{system:systemPrompt,max_tokens:16384});
-    const data=parseClaudeJson(result.text);
     if(!data.passes||!Array.isArray(data.passes)||!data.passes.length){
       throw new Error('AI:n returnerade inga pass — kontrollera programtexten och försök igen');
     }
@@ -1961,6 +1914,99 @@ Viktigt:
     showImpView('input');
     console.error('Import-parse fel:',e);
     alert('Fel vid analys: '+e.message+'\n\nTips: Försök igen — AI:n kan ge olika resultat. Om felet upprepas, dela upp programmet i mindre delar.');
+  }
+}
+
+// Bygg fil-blocket (PDF/bild) som skickas med varje anrop
+function importFileBlock(){
+  return {
+    type:importAttachment.type,
+    source:{type:'base64',media_type:importAttachment.mediaType,data:importAttachment.base64}
+  };
+}
+
+// Analysera en PDF/bild i två faser för att hålla varje svar litet nog att hinna inom Vercel-timeout (60s).
+// Fas 1: lista alla pass-namn (litet svar). Fas 2: detaljera passen i grupper om 4.
+async function analyzeFileInBatches(systemPrompt,userText){
+  const loadingDetail=document.getElementById('imp-loading-detail');
+  const fileBlock=importFileBlock();
+  // ---- FAS 1: hämta alla pass-namn ----
+  if(loadingDetail) loadingDetail.textContent='Steg 1/2: Identifierar alla pass i programmet…';
+  const listInstr=`Läs HELA detta träningsprogram mycket noggrant (alla sidor). Returnera ENBART en JSON-array med namnen på ALLA träningspass i programmet, i den ordning de förekommer. Bara namnen — inga övningar.\n\nExempel på format: ["Styrka A","Styrka B","Intervall 1","Bålpass 1"]\n\nMissa inga pass.${userText?'\n\nAnvändarens info: '+userText:''}`;
+  const listMsg=[{role:'user',content:[fileBlock,{type:'text',text:listInstr}]}];
+  const listRes=await callClaude(listMsg,{
+    system:'Du listar namnen på alla träningspass i ett program som en JSON-array av strängar. Returnera ENBART arrayen, inget annat — ingen markdown, ingen text.',
+    max_tokens:2000
+  });
+  const passNames=parseClaudeJsonArray(listRes.text);
+  if(!passNames.length) throw new Error('Hittade inga pass i programmet. Försök igen eller klistra in texten manuellt.');
+  // ---- FAS 2: detaljera i batchar ----
+  const BATCH=4;
+  const allPasses=[];
+  for(let i=0;i<passNames.length;i+=BATCH){
+    const batch=passNames.slice(i,i+BATCH);
+    const from=i+1,to=Math.min(i+BATCH,passNames.length);
+    if(loadingDetail) loadingDetail.textContent=`Steg 2/2: Detaljerar pass ${from}–${to} av ${passNames.length}…`;
+    const detailInstr=`Från detta träningsprogram: detaljera ENBART följande pass (exakt dessa, i denna ordning): ${batch.map(n=>'"'+n+'"').join(', ')}.\n\nFör VARJE pass: ta med ALLA övningar som faktiskt står i programmet för det passet, exakt som de står, i rätt ordning. Hitta inte på övningar. Returnera JSON enligt formatet i system-prompten med en "passes"-array som innehåller exakt dessa ${batch.length} pass.${userText?'\n\nAnvändarens info: '+userText:''}`;
+    const detailMsg=[{role:'user',content:[fileBlock,{type:'text',text:detailInstr}]}];
+    const detailRes=await callClaude(detailMsg,{system:systemPrompt,max_tokens:8000});
+    try{
+      const batchData=parseClaudeJson(detailRes.text);
+      if(batchData.passes&&Array.isArray(batchData.passes)) allPasses.push(...batchData.passes);
+    }catch(e){
+      console.warn(`Kunde inte tolka batch ${from}-${to}:`,e.message);
+      // Fortsätt med övriga batchar — bättre att få NÅGRA pass än inga
+    }
+  }
+  if(!allPasses.length) throw new Error('Kunde inte detaljera passen. Försök igen eller dela upp programmet.');
+  return {passes:allPasses};
+}
+
+// YouTube-import (befintlig logik, ett anrop)
+async function analyzeYoutubeImport(systemPrompt,text){
+  const videos=importAttachment.videos||[];
+  const blocks=[];
+  for(const v of videos){
+    blocks.push({type:'image',source:{type:'base64',media_type:v.mediaType,data:v.base64}});
+  }
+  let instr;
+  if(videos.length>1){
+    instr=`Detta är ${videos.length} tumnagelbilder från olika YouTube/Vimeo-träningsvideor. VARJE VIDEO MOTSVARAR ETT SEPARAT PASS — du ska returnera exakt ${videos.length} pass-objekt i passes-arrayen, ETT per video, i samma ordning som videorna nedan.\n\nVideor i ordning:`;
+    videos.forEach((v,i)=>{
+      instr+=`\n${i+1}. ${v.youtubeTitle?'"'+v.youtubeTitle+'"':'(saknar titel)'}${v.youtubeAuthor?' — '+v.youtubeAuthor:''}`;
+    });
+    instr+=`\n\nAnvänd titlarna som STARK ledtråd för pass-namn och struktur.`;
+  }else{
+    const v=videos[0];
+    instr=`Detta är en tumnagel från en ${v.provider==='youtube'?'YouTube':'Vimeo'}-video som visar ett träningspass.`;
+    if(v.youtubeTitle) instr+=`\n\nVideotitel: "${v.youtubeTitle}"`;
+    if(v.youtubeAuthor) instr+=`\nKanal: ${v.youtubeAuthor}`;
+    instr+=`\n\nStrukturera passet till JSON enligt formatet i system-prompten. Använd titeln som STARK ledtråd för passnamn och struktur (t.ex. "20 min HIIT - 10 övningar" → 10 övningar med rimliga tider).`;
+  }
+  if(text){
+    instr+=`\n\nExtra instruktioner/övningslistor från användaren (använd som PRIMÄR källa när det finns):\n${text}`;
+  }else{
+    instr+=`\n\nOBS: användaren har inte skrivit in övningslistan, så du måste gissa övningar baserat på titel/tumnagel. Lägg en kort markering i pass-beskrivningen att övningarna är AI:s gissning och bör verifieras.`;
+  }
+  blocks.push({type:'text',text:instr});
+  const result=await callClaude([{role:'user',content:blocks}],{system:systemPrompt,max_tokens:16384});
+  return parseClaudeJson(result.text);
+}
+
+// Parsa en JSON-array av strängar (för pass-namn-listan i fas 1)
+function parseClaudeJsonArray(raw){
+  if(!raw||typeof raw!=='string') return [];
+  let s=raw.trim();
+  if(s.startsWith('```')) s=s.replace(/^```(?:json)?\s*\n?/i,'').replace(/\n?```\s*$/,'');
+  const first=s.indexOf('['),last=s.lastIndexOf(']');
+  if(first>=0&&last>first) s=s.slice(first,last+1);
+  s=s.replace(/[“”„‟]/g,'"').replace(/,(\s*])/g,'$1');
+  try{
+    const arr=JSON.parse(s);
+    return Array.isArray(arr)?arr.filter(x=>typeof x==='string'&&x.trim()).map(x=>x.trim()):[];
+  }catch(e){
+    console.warn('Kunde inte parsa pass-namn-array:',e.message);
+    return [];
   }
 }
 
