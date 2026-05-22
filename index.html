@@ -1652,7 +1652,7 @@ async function onImportFileChange(input){
       };
       // Töm textarea och uppdatera placeholder så det blir tydligt att den är frivillig
       document.getElementById('imp-text').value='';
-      document.getElementById('imp-text').placeholder='Extra instruktioner till AI (frivilligt). T.ex. "Skippa uppvärmningsdelen, jag har egen rutin" eller "Bara veckorna 1-4"';
+      document.getElementById('imp-text').placeholder='Extra instruktioner till AI (frivilligt, men ger bättre resultat). T.ex. "Varje pass har 7-8 övningar — ta med ALLA, hitta inte på något" eller "Skippa uppvärmningen" eller "Bara veckorna 1-4"';
       status.style.color='var(--accent-3)';
       const icon=isPdf?'📄':'🖼️';
       status.textContent=`${icon} ${name} (${sizeMb} MB) redo — AI tolkar filen direkt`;
@@ -1830,28 +1830,33 @@ async function analyzeImport(){
   showImpView('loading');
   const systemPrompt=`Du är expert på att tolka träningsprogram. Användaren har skickat in ett dokument (PDF, bild, eller text) och du ska strukturera det till JSON för en träningsapp.
 
-VAD SKA IGNORERAS:
+⚠️ VIKTIGAST AV ALLT — TROHET MOT KÄLLAN:
+- Ta med EXAKT de övningar som faktiskt står i programmet — ALLA av dem, inga utelämnade.
+- Om ett pass innehåller 8 övningar ska du returnera 8 övningar. Nöj dig ALDRIG med ett standardantal som 4.
+- HITTA ALDRIG PÅ övningar, pass, set eller reps som inte finns i källan. Hellre färre korrekta än många påhittade.
+- Är du osäker på en övnings namn — återge det så nära källan som möjligt, gissa inte ett helt annat namn.
+- Läs hela dokumentet noggrant innan du svarar. Missa inte övningar längst ner i ett pass eller på efterföljande sidor.
+- Behåll passens ordning och övningarnas ordning precis som i källan.
+
+VAD SKA IGNORERAS (men bara rena förklaringar — aldrig faktiska övningar):
 - Inledande brödtext, träningsfilosofi, allmänna råd
-- Förklaringar av zoner, pulsintervaller eller principer (om de inte är del av ett specifikt pass)
-- Information om coach, kontaktuppgifter, försättssidor
-- Periodiseringsförklaringar, allmän bakgrundsinfo
-- Repetitiva eller skissartade övergripande veckoöversikter (ta hellre med ENSKILDA pass)
+- Förklaringar av zoner/pulsintervaller/principer (om de inte är del av ett specifikt pass)
+- Coach-info, kontaktuppgifter, försättssidor, periodiseringsförklaringar
 
 VAD SKA EXTRAHERAS:
-- Konkreta träningspass med namn (om de finns)
-- Övningar i passet med set, reps, vikt, distans, tid där det framgår
+- Varje konkret träningspass med sitt namn
+- ALLA övningar i passet med set, reps, vikt, distans, tid där det framgår
 - Pulszoner när de är specificerade per övning (Z1-Z5)
 
 KRITISKT - JSON-format:
 - Returnera ENBART giltig JSON, inget annat. Ingen markdown, inga code fences, inga kommentarer, ingen text före/efter.
 - Använd alltid dubbla citattecken (") runt nycklar och strängvärden — aldrig single quotes eller smart quotes.
-- INGA trailing commas (kommatecken före } eller ]).
+- Sätt alltid komma mellan objekt i en array (}, {). INGA trailing commas (kommatecken före } eller ]).
 
-KOMPAKT - spara plats (viktigt för stora program):
-- Håll "description" mycket kort (max 5 ord) eller utelämna (tom sträng).
-- Håll "note" kort (max ~8 ord) eller tom sträng. Inga långa förklaringar.
-- Detta gör att ALLA pass och övningar får plats i svaret utan att klippas av.
-- Om programmet ändå är väldigt långt: prioritera att avsluta JSON-objektet KORREKT framför att ta med allt. Bättre 10 kompletta pass än 16 avhuggna.
+OM TEXT/PROSA (gäller BARA description och note — ALDRIG antal övningar/pass):
+- Håll "description" kort (max ~10 ord) eller tom sträng.
+- Håll "note" kort (max ~16 ord) eller tom sträng.
+- Detta sparar plats så att ALLA övningar får plats. Men korta beskrivningar får ALDRIG bli en ursäkt för att hoppa över övningar.
 
 Format:
 
