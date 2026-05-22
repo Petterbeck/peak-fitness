@@ -1638,26 +1638,36 @@ async function onImportFileChange(input){
     const isCsv=ext==='csv';
     const isText=ext==='txt'||file.type.startsWith('text/');
 
-    if(isPdf||isImage){
-      // AI tolkar filen direkt — vi skickar base64. Vercel Hobby har 4.5 MB body-gräns och base64 ökar storlek ~33%, så vi sätter 3 MB-tak.
-      const MAX_BYTES=3*1024*1024;
-      if(sizeBytes>MAX_BYTES){
-        throw new Error(`Filen är för stor (${sizeMb} MB) — max 3 MB stöds. Komprimera PDF:en (t.ex. ilovepdf.com) eller dela upp den.`);
+    if(isPdf){
+      // Försök FÖRST extrahera texten (pdf.js). Text = ~5k tokens istället för ~30k för PDF-som-bild
+      // → undviker Anthropics token-per-minut-gräns. Faller tillbaka till PDF-bild om PDF:en är skannad.
+      status.textContent=`⏳ Läser text ur ${name}…`;
+      let pdfText='';
+      try{ pdfText=(await extractPdfText(file)).trim(); }catch(e){ console.warn('PDF-textextraktion misslyckades:',e.message); }
+      if(pdfText.length>=300){
+        // Text-baserad PDF → använd text-vägen (snabb, billig, inget rate-limit)
+        document.getElementById('imp-text').value=pdfText;
+        status.style.color='var(--accent-3)';
+        status.textContent=`✓ ${name} läst — ${pdfText.length} tecken text extraherad. Granska i textrutan och tryck "Analysera".`;
+      }else{
+        // Skannad PDF (lite/ingen text) → fall tillbaka till PDF-som-bild
+        const MAX_BYTES=3*1024*1024;
+        if(sizeBytes>MAX_BYTES) throw new Error(`PDF:en saknar läsbar text (skannad?) och är för stor (${sizeMb} MB) för bildtolkning (max 3 MB). Komprimera eller klistra in texten manuellt.`);
+        const base64=await fileToBase64(file);
+        importAttachment={type:'document',mediaType:'application/pdf',base64,name,sizeMb};
+        document.getElementById('imp-text').value='';
+        status.style.color='var(--accent-3)';
+        status.textContent=`📄 ${name} (${sizeMb} MB) — ingen text hittades, AI tolkar som bild`;
       }
+    }else if(isImage){
+      // Bild → AI tolkar direkt (base64). Max 3 MB (Vercel body-gräns).
+      const MAX_BYTES=3*1024*1024;
+      if(sizeBytes>MAX_BYTES) throw new Error(`Bilden är för stor (${sizeMb} MB) — max 3 MB. Komprimera först.`);
       const base64=await fileToBase64(file);
-      importAttachment={
-        type:isPdf?'document':'image',
-        mediaType:isPdf?'application/pdf':file.type,
-        base64,
-        name,
-        sizeMb
-      };
-      // Töm textarea och uppdatera placeholder så det blir tydligt att den är frivillig
+      importAttachment={type:'image',mediaType:file.type,base64,name,sizeMb};
       document.getElementById('imp-text').value='';
-      document.getElementById('imp-text').placeholder='Extra instruktioner till AI (frivilligt, men ger bättre resultat). T.ex. "Varje pass har 7-8 övningar — ta med ALLA, hitta inte på något" eller "Skippa uppvärmningen" eller "Bara veckorna 1-4"';
       status.style.color='var(--accent-3)';
-      const icon=isPdf?'📄':'🖼️';
-      status.textContent=`${icon} ${name} (${sizeMb} MB) redo — AI tolkar filen direkt`;
+      status.textContent=`🖼️ ${name} (${sizeMb} MB) redo — AI tolkar bilden`;
     }else if(isExcel||isCsv){
       const text=(await extractSpreadsheetText(file)).trim();
       if(!text) throw new Error('Filen verkar tom — klistra in manuellt istället.');
@@ -1899,10 +1909,14 @@ Viktigt:
       // YouTube-källa: en eller flera videos. Varje video = ett pass. (Litet svar — ett anrop.)
       data=await analyzeYoutubeImport(systemPrompt,text);
     }else if(importAttachment){
-      // PDF/bild-fil: batch-strategi för att undvika timeout på stora program
-      data=await analyzeFileInBatches(systemPrompt,text);
+      // PDF-bild/bild (skannad PDF eller foto): batcha med fil-block (cache+pacing mot rate-limit)
+      data=await analyzeInBatches({kind:'file'},systemPrompt,text);
+    }else if(text.length>1500){
+      // Stor text (inkl text extraherad ur PDF): batcha för att undvika timeout på stora svar.
+      // Text är token-snålt → inget rate-limit-problem även om vi upprepar texten per batch.
+      data=await analyzeInBatches({kind:'text',text},systemPrompt,'');
     }else{
-      // Ren text — ett anrop räcker (användaren ser storleken själv)
+      // Liten text — ett anrop räcker
       const result=await callClaude([{role:'user',content:text}],{system:systemPrompt,max_tokens:16384});
       data=parseClaudeJson(result.text);
     }
@@ -1945,16 +1959,25 @@ async function callClaudeWithRetry(messages,options,retries=2){
   throw lastErr;
 }
 
-// Analysera en PDF/bild i två faser för att hålla varje svar litet nog att hinna inom Vercel-timeout (60s).
+// Bygg user-content för ett batch-anrop beroende på källa (fil-block eller text)
+function buildBatchUserContent(source,instr){
+  if(source.kind==='file'){
+    return [importFileBlock(),{type:'text',text:instr}];
+  }
+  // Text-källa: programtexten + instruktionen i ett text-block (token-snålt, OK att upprepa per batch)
+  return `PROGRAMTEXT:\n${source.text}\n\n----\n${instr}`;
+}
+
+// Analysera ett program i två faser för att hålla varje svar litet nog att hinna inom Vercel-timeout (60s).
+// source = {kind:'file'} (PDF-bild/bild via importAttachment) eller {kind:'text', text}.
 // Fas 1: lista alla pass-namn (litet svar). Fas 2: detaljera passen i grupper om 4.
-async function analyzeFileInBatches(systemPrompt,userText){
+async function analyzeInBatches(source,systemPrompt,userText){
   const loadingDetail=document.getElementById('imp-loading-detail');
-  const fileBlock=importFileBlock();
   // ---- FAS 1: hämta alla pass-namn ----
   if(loadingDetail) loadingDetail.textContent='Steg 1/2: Identifierar alla pass i programmet…';
-  const listInstr=`Läs HELA detta träningsprogram mycket noggrant (alla sidor). Returnera ENBART en JSON-array med namnen på ALLA träningspass i programmet, i den ordning de förekommer. Bara namnen — inga övningar.\n\nExempel på format: ["Styrka A","Styrka B","Intervall 1","Bålpass 1"]\n\nMissa inga pass.${userText?'\n\nAnvändarens info: '+userText:''}`;
-  const listMsg=[{role:'user',content:[fileBlock,{type:'text',text:listInstr}]}];
-  const listRes=await callClaude(listMsg,{
+  const listInstr=`Läs HELA detta träningsprogram mycket noggrant (alla sidor/avsnitt). Returnera ENBART en JSON-array med namnen på ALLA träningspass i programmet, i den ordning de förekommer. Bara namnen — inga övningar.\n\nExempel på format: ["Styrka A","Styrka B","Intervall 1","Bålpass 1"]\n\nMissa inga pass.${userText?'\n\nAnvändarens info: '+userText:''}`;
+  const listMsg=[{role:'user',content:buildBatchUserContent(source,listInstr)}];
+  const listRes=await callClaudeWithRetry(listMsg,{
     system:'Du listar namnen på alla träningspass i ett program som en JSON-array av strängar. Returnera ENBART arrayen, inget annat — ingen markdown, ingen text.',
     max_tokens:2000
   });
@@ -1968,16 +1991,15 @@ async function analyzeFileInBatches(systemPrompt,userText){
   for(let i=0;i<passNames.length;i+=BATCH){
     const batch=passNames.slice(i,i+BATCH);
     const from=i+1,to=Math.min(i+BATCH,passNames.length);
-    // Paus mellan anrop för att sprida token-användningen (undvik rate-limit på stora program).
-    // Caching gör efterföljande PDF-läsningar billiga, men token-per-minut-gränsen kan ändå slå till.
+    // Liten paus mellan anrop för att sprida token-användningen (extra säkerhet mot rate-limit).
     if(batchIndex>0){
-      if(loadingDetail) loadingDetail.textContent=`Väntar kort för att undvika hastighetsgräns… (pass ${from}–${to} av ${passNames.length})`;
-      await new Promise(r=>setTimeout(r,4000));
+      if(loadingDetail) loadingDetail.textContent=`Väntar kort… (pass ${from}–${to} av ${passNames.length})`;
+      await new Promise(r=>setTimeout(r,source.kind==='file'?4000:1200));
     }
     batchIndex++;
     if(loadingDetail) loadingDetail.textContent=`Steg 2/2: Detaljerar pass ${from}–${to} av ${passNames.length}…`;
     const detailInstr=`Från detta träningsprogram: detaljera ENBART följande pass (exakt dessa, i denna ordning): ${batch.map(n=>'"'+n+'"').join(', ')}.\n\nFör VARJE pass: ta med ALLA övningar som faktiskt står i programmet för det passet, exakt som de står, i rätt ordning. Hitta inte på övningar. Returnera JSON enligt formatet i system-prompten med en "passes"-array som innehåller exakt dessa ${batch.length} pass.${userText?'\n\nAnvändarens info: '+userText:''}`;
-    const detailMsg=[{role:'user',content:[fileBlock,{type:'text',text:detailInstr}]}];
+    const detailMsg=[{role:'user',content:buildBatchUserContent(source,detailInstr)}];
     try{
       const detailRes=await callClaudeWithRetry(detailMsg,{system:systemPrompt,max_tokens:8000});
       const batchData=parseClaudeJson(detailRes.text);
@@ -1989,7 +2011,6 @@ async function analyzeFileInBatches(systemPrompt,userText){
     }
   }
   if(!allPasses.length) throw new Error('Kunde inte detaljera passen (alla delförsök misslyckades). Försök igen om en stund.');
-  // Spara info om misslyckade batchar så vi kan varna i preview
   if(failedBatches.length) importBatchWarning=`⚠️ ${failedBatches.length} grupp(er) kunde inte hämtas (pass ${failedBatches.join(', ')}). ${allPasses.length} pass kom med — kör importen igen för resten om du vill.`;
   else importBatchWarning='';
   return {passes:allPasses};
