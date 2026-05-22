@@ -1846,7 +1846,12 @@ KRITISKT - JSON-format:
 - Returnera ENBART giltig JSON, inget annat. Ingen markdown, inga code fences, inga kommentarer, ingen text före/efter.
 - Använd alltid dubbla citattecken (") runt nycklar och strängvärden — aldrig single quotes eller smart quotes.
 - INGA trailing commas (kommatecken före } eller ]).
-- Om programmet är väldigt långt: prioritera att avsluta JSON-objektet KORREKT framför att ta med alla pass. Det är bättre att returnera 5 kompletta pass än 10 avhuggna.
+
+KOMPAKT - spara plats (viktigt för stora program):
+- Håll "description" mycket kort (max 5 ord) eller utelämna (tom sträng).
+- Håll "note" kort (max ~8 ord) eller tom sträng. Inga långa förklaringar.
+- Detta gör att ALLA pass och övningar får plats i svaret utan att klippas av.
+- Om programmet ändå är väldigt långt: prioritera att avsluta JSON-objektet KORREKT framför att ta med allt. Bättre 10 kompletta pass än 16 avhuggna.
 
 Format:
 
@@ -1939,7 +1944,7 @@ Viktigt:
     }else{
       messages=[{role:'user',content:text}];
     }
-    const result=await callClaude(messages,{system:systemPrompt,max_tokens:8192});
+    const result=await callClaude(messages,{system:systemPrompt,max_tokens:16384});
     const data=parseClaudeJson(result.text);
     if(!data.passes||!Array.isArray(data.passes)||!data.passes.length){
       throw new Error('AI:n returnerade inga pass — kontrollera programtexten och försök igen');
@@ -1974,18 +1979,33 @@ function parseClaudeJson(raw){
   s=s.replace(/\/\/[^\n\r]*/g,'').replace(/\/\*[\s\S]*?\*\//g,'');
   // 5. Ta bort trailing commas före } eller ]
   s=s.replace(/,(\s*[}\]])/g,'$1');
-  // 6. Försök parsa
+  // 6. Försök parsa direkt
   try{
     return JSON.parse(s);
   }catch(e){
-    // Om det failar — kolla om svaret kan vara avhugget (saknar matchande }) och försök reparera
+    // 6b. Försök laga saknade kommatecken mellan array-element (vanligt LLM-fel: }{ istället för },{)
+    try{
+      const commaFixed=s.replace(/}(\s*){/g,'},$1{').replace(/](\s*)\[/g,'],$1[');
+      const data=JSON.parse(commaFixed);
+      console.warn('JSON saknade kommatecken mellan element — lagat automatiskt.');
+      return data;
+    }catch(e1b){}
+    // 6c. Kolla om svaret är avhugget (saknar matchande }) och försök reparera
     const repaired=tryRepairTruncatedJson(s);
     if(repaired){
       try{
         const data=JSON.parse(repaired);
         console.warn('JSON var avhugget — reparerat automatiskt. Granska resultatet noggrant.');
         return data;
-      }catch(e2){}
+      }catch(e2){
+        // Sista försök: reparera trunkering OCH laga commas
+        try{
+          const both=repaired.replace(/}(\s*){/g,'},$1{').replace(/](\s*)\[/g,'],$1[');
+          const data=JSON.parse(both);
+          console.warn('JSON var avhugget + saknade commas — lagat automatiskt.');
+          return data;
+        }catch(e3){}
+      }
     }
     // Ge bättre felmeddelande med position-info
     const m=e.message.match(/position (\d+)/);
