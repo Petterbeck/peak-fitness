@@ -46,6 +46,10 @@ create table if not exists public.exercises (
 create index if not exists exercises_user_id_idx on public.exercises(user_id);
 -- Tillägg: tutorial-video-länk (YouTube/Vimeo)
 alter table public.exercises add column if not exists video_url text;
+-- Tillägg: kondition/cardio-defaults (distans km + tid min som DECIMAL, pulszon som heltal)
+alter table public.exercises add column if not exists default_distance numeric;
+alter table public.exercises add column if not exists default_time numeric;
+alter table public.exercises add column if not exists pulse_zone int;
 
 -- ------------------------------------------------------------
 -- 3. TRAINING FORMS

@@ -2770,8 +2770,8 @@ function renderImportPreview(){
     const setOptions=formOptions.replace(`value="${defaultForm?.id}"`,`value="${defaultForm?.id}" selected`);
     const exList=(p.exercises||[]).map(e=>{
       const setsReps=e.reps?`${e.sets}×${e.reps}`:(e.time?`${e.sets}× ${e.time} min`:`${e.sets} set`);
-      const dist=e.distance?` · ${e.distance} km`:'';
-      const w=e.weight?` · ${e.weight} kg`:'';
+      const dist=e.distance?` · ${fmtNum(e.distance)} km`:'';
+      const w=e.weight?` · ${fmtNum(e.weight)} kg`:'';
       const pz=e.pulseZone?` · Z${e.pulseZone}`:'';
       return `<div style="padding:3px 0;border-bottom:0.5px solid var(--border);font-size:11px"><b>${e.name}</b> <span style="color:var(--text-3)">· ${e.muscle||'–'} · ${setsReps}${dist}${w}${pz}</span></div>`;
     }).join('');
@@ -3415,11 +3415,29 @@ function scheduleSyncToCloud(){
 let cloudLoadComplete=false;
 
 // Tvinga ett värde till heltal för Postgres int-kolumner (annars kraschar sync på t.ex. 0.25).
-// Decimaler avrundas; ogiltiga/null-värden ger fallback.
+// Decimaler avrundas; ogiltiga/null-värden ger fallback. Reps/sets/pulszon = heltal.
 function toInt(v,fallback=null){
   if(v===null||v===undefined||v==='') return fallback;
-  const n=Math.round(Number(v));
+  const n=Math.round(Number(toNum(v)));
   return Number.isFinite(n)?n:fallback;
+}
+// Decimaltal för numeric-kolumner (distans/tid/vikt). Komma-medveten. null om ogiltigt.
+function toNum(v,fallback=null){
+  if(v===null||v===undefined||v==='') return fallback;
+  const n=parseFloat(String(v).replace(',','.'));
+  return Number.isFinite(n)?n:fallback;
+}
+// Läs ett tal från ett inmatningsfält — accepterar både komma och punkt.
+function parseNum(v,fallback=0){
+  const n=parseFloat(String(v).replace(',','.'));
+  return Number.isFinite(n)?n:fallback;
+}
+// Formatera ett tal för visning med svenskt decimaltecken (komma). Heltal visas utan decimaler.
+function fmtNum(v){
+  if(v===null||v===undefined||v==='') return '';
+  const n=Number(v);
+  if(!Number.isFinite(n)) return '';
+  return String(n).replace('.',',');
 }
 
 // Radera moln-rader som inte längre finns lokalt (= användaren tog bort dem).
@@ -3490,6 +3508,7 @@ async function syncToCloud(silent){
         id:ex.id,user_id:uid,name:ex.name,muscle:ex.muscle,
         form_tags:ex.formTags||[],custom_tags:ex.customTags||[],
         default_sets:toInt(ex.defaultSets,3),default_reps:toInt(ex.defaultReps,0),
+        default_distance:toNum(ex.defaultDistance),default_time:toNum(ex.defaultTime),pulse_zone:toInt(ex.pulseZone),
         media_url:ex.mediaUrl,video_url:ex.videoUrl||null,fav:!!ex.fav,note:ex.note||''
       })));
       if(error) throw error;
@@ -3648,6 +3667,7 @@ async function loadFromCloud(silent){
       id:ex.id,name:ex.name,muscle:ex.muscle,
       formTags:ex.form_tags||[],customTags:ex.custom_tags||[],
       defaultSets:ex.default_sets,defaultReps:ex.default_reps,
+      defaultDistance:ex.default_distance??null,defaultTime:ex.default_time??null,pulseZone:ex.pulse_zone??null,
       mediaUrl:ex.media_url,videoUrl:ex.video_url||null,fav:ex.fav,note:ex.note||''
     }));
     // Migrera så cloud-data också får primärform (fält som inte syncas än)
@@ -4614,13 +4634,13 @@ function renderExercises(){
     // Meta-text per primärform
     let meta='';
     if(pf==='strength'){
-      meta=`${ex.muscle||''} · ${ex.defaultSets}×${ex.defaultReps||'–'}${ex.useBodyweight?' · egen vikt':ex.defaultWeight?' · '+ex.defaultWeight+' kg':''}`;
+      meta=`${ex.muscle||''} · ${ex.defaultSets}×${ex.defaultReps||'–'}${ex.useBodyweight?' · egen vikt':ex.defaultWeight?' · '+fmtNum(ex.defaultWeight)+' kg':''}`;
     }else if(pf==='bodyweight'){
       meta=`${ex.muscle||''} · ${ex.defaultSets}×${ex.defaultReps||'–'} · egen vikt`;
     }else if(pf==='running'||pf==='cycling'){
       const pz=ex.pulseZone?`Z${ex.pulseZone}`:'';
-      const dist=ex.defaultDistance?`${ex.defaultDistance} km`:'';
-      const time=ex.defaultTime?`${ex.defaultTime} min`:'';
+      const dist=ex.defaultDistance?`${fmtNum(ex.defaultDistance)} km`:'';
+      const time=ex.defaultTime?`${fmtNum(ex.defaultTime)} min`:'';
       const setsLabel=ex.defaultSets>1?`${ex.defaultSets}× `:'';
       meta=[pz,setsLabel+[dist,time].filter(Boolean).join(' · ')].filter(Boolean).join(' · ').trim();
       if(!meta) meta=pfInfo.label;
@@ -4792,7 +4812,7 @@ function saveExerciseEdit(){
     reps=parseInt(document.getElementById('ex-f-reps').value)||0;
     useBodyweight=document.getElementById('ex-f-bodyweight').checked;
     const wVal=document.getElementById('ex-f-weight').value.trim();
-    defaultWeight=useBodyweight?(userProfile.weightKg||null):(wVal===''?null:parseFloat(wVal)||null);
+    defaultWeight=useBodyweight?(userProfile.weightKg||null):(wVal===''?null:toNum(wVal));
     subTags=Array.from(document.querySelectorAll('#ex-f-strength-tags .filter-chip.active')).map(c=>c.getAttribute('data-tag'));
     formTags=['gym','styrka'];
   }else if(pf==='bodyweight'){
@@ -4807,9 +4827,9 @@ function saveExerciseEdit(){
     pulseZone=pzv?parseInt(pzv):null;
     sets=parseInt(document.getElementById('ex-f-c-sets').value)||1;
     const dVal=document.getElementById('ex-f-c-dist').value.trim();
-    defaultDistance=dVal===''?null:parseFloat(dVal)||null;
+    defaultDistance=dVal===''?null:toNum(dVal);
     const tVal=document.getElementById('ex-f-c-time').value.trim();
-    defaultTime=tVal===''?null:parseFloat(tVal)||null;
+    defaultTime=tVal===''?null:toNum(tVal);
     subTags=Array.from(document.querySelectorAll('#ex-f-cardio-tags .filter-chip.active')).map(c=>c.getAttribute('data-tag'));
     formTags=['kondition'];
   }else if(pf==='mobility'){
@@ -4977,7 +4997,7 @@ function renderLogExs(){
     </div>`).join('');
 }
 
-function updS(ei,si,k,v){loggedExs[ei].sets[si][k]=parseFloat(v)||0;}
+function updS(ei,si,k,v){loggedExs[ei].sets[si][k]=parseNum(v,0);}
 function stepS(ei,si,k,delta){
   const cur=parseFloat(loggedExs[ei].sets[si][k])||0;
   const next=Math.max(0,Math.round((cur+delta)*100)/100);
@@ -5901,7 +5921,7 @@ function renderWorkoutDetail(){
       }else{
         const sets=(ex.sets||[]).filter(s=>s.done||s.w||s.r);
         setsHtml=sets.length?sets.map((s,si)=>{
-          return `<div style="display:grid;grid-template-columns:24px 1fr 1fr 24px;gap:6px;font-size:12px;padding:4px 0;align-items:center"><div style="color:var(--text-3);font-weight:700;text-align:center">${si+1}</div><div style="text-align:center"><span style="font-weight:700">${s.w||'–'}</span> <span style="color:var(--text-3);font-size:10px">${wLabel.toLowerCase()}</span></div><div style="text-align:center"><span style="font-weight:700">${s.r||'–'}</span> <span style="color:var(--text-3);font-size:10px">${rLabel.toLowerCase()}</span></div><div style="text-align:center;color:${s.done?'var(--accent-3)':'var(--text-3)'}">${s.done?'<i class="ti ti-check"></i>':'–'}</div></div>`;
+          return `<div style="display:grid;grid-template-columns:24px 1fr 1fr 24px;gap:6px;font-size:12px;padding:4px 0;align-items:center"><div style="color:var(--text-3);font-weight:700;text-align:center">${si+1}</div><div style="text-align:center"><span style="font-weight:700">${s.w?fmtNum(s.w):'–'}</span> <span style="color:var(--text-3);font-size:10px">${wLabel.toLowerCase()}</span></div><div style="text-align:center"><span style="font-weight:700">${s.r?fmtNum(s.r):'–'}</span> <span style="color:var(--text-3);font-size:10px">${rLabel.toLowerCase()}</span></div><div style="text-align:center;color:${s.done?'var(--accent-3)':'var(--text-3)'}">${s.done?'<i class="ti ti-check"></i>':'–'}</div></div>`;
         }).join(''):'<div style="font-size:12px;color:var(--text-3);padding:6px 0">Inga set registrerade</div>';
       }
       // Hitta tutorial-video: först via exId (säkrast), annars fallback via namn (för historiska pass innan vi sparade exId)
@@ -5959,7 +5979,7 @@ function updWE(exIdx,setIdx,key,val){
   if(!w) return;
   const s=w.exercises?.[exIdx]?.sets?.[setIdx];
   if(!s) return;
-  s[key]=parseFloat(val)||0;
+  s[key]=parseNum(val,0);
 }
 
 function togWE(exIdx,setIdx){
