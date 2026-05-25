@@ -361,13 +361,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <button class="plan-tab" onclick="setPlanTab(this,'tab-exercises')">Övningar</button>
     </div>
     <div id="tab-passes" style="display:none;flex-direction:column;gap:10px">
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn-primary" onclick="openNewPass()" style="flex:1;min-width:160px"><i class="ti ti-plus"></i> Nytt träningspass</button>
-        <button class="btn-ghost" onclick="openImportProgram()" style="flex:1;min-width:140px;font-size:12px;font-weight:700;color:var(--accent-4);border-color:var(--accent-4)"><i class="ti ti-sparkles"></i> Importera (AI)</button>
-        <button class="btn-ghost" onclick="openScheduleProgram()" style="flex:1;min-width:160px;font-size:12px;font-weight:700;color:var(--accent-3);border-color:var(--accent-3)"><i class="ti ti-calendar-plus"></i> Schemalägg program</button>
-        <button class="btn-ghost" onclick="openImportShare()" style="flex:1;min-width:150px;font-size:12px;font-weight:700"><i class="ti ti-download"></i> Importera delning</button>
-        <button class="btn-ghost" onclick="openShareProgram()" style="flex:1;min-width:140px;font-size:12px;font-weight:700"><i class="ti ti-share"></i> Dela program</button>
-        <button class="btn-ghost" onclick="openModal('m-add-form')" style="flex:1;min-width:130px;font-size:12px;font-weight:700"><i class="ti ti-folder-plus"></i> Ny träningsform</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="openNewPass()" style="flex:1"><i class="ti ti-plus"></i> Nytt träningspass</button>
+        <button class="btn-ghost" onclick="openImportMenu()" style="flex:1;font-weight:700;color:var(--accent-4);border-color:var(--accent-4)"><i class="ti ti-download"></i> Importera / dela</button>
       </div>
       <input class="search-bar" id="pass-search" placeholder="Sök pass..." oninput="renderPassList()">
       <div>
@@ -385,6 +381,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div id="pass-list" style="display:flex;flex-direction:column;gap:8px"></div>
     </div>
     <div id="tab-schema" style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;gap:8px">
+        <button class="btn-ghost" onclick="openScheduleProgram()" style="flex:1;font-size:12px;font-weight:700;color:var(--accent-3);border-color:var(--accent-3)"><i class="ti ti-calendar-plus"></i> Schemalägg program</button>
+        <button class="btn-ghost" onclick="openRemoveProgram()" style="flex:1;font-size:12px;font-weight:700;color:#e8200a;border-color:#e8200a44"><i class="ti ti-calendar-minus"></i> Ta bort program</button>
+      </div>
       <div class="cal-wrap">
         <div class="cal-nav">
           <button class="cal-nav-btn" onclick="changeMonth(-1)"><i class="ti ti-chevron-left"></i></button>
@@ -686,13 +686,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 
 <!-- MODALS -->
-<div class="modal" id="m-add-form" onclick="closeBg(event,'m-add-form')">
+<div class="modal" id="m-add-form" onclick="closeAddFormBg(event)">
   <div class="modal-sheet"><div class="modal-handle"></div><div class="modal-title">Ny träningsform</div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <div><label class="field-label">Namn</label><input class="field-input" id="nf-name" placeholder="T.ex. Cykling"></div>
       <div><label class="field-label">Ikon</label><input class="field-input" id="nf-icon" placeholder="🚴" value="💪"></div>
       <div><label class="field-label">Kategori</label><select class="field-select" id="nf-cat"><option value="strength">Styrketräning</option><option value="cardio">Kondition</option><option value="mobility">Rörlighet/Yoga</option></select></div>
       <button class="btn-primary" onclick="addForm()"><i class="ti ti-check"></i> Skapa</button>
+    </div>
+  </div>
+</div>
+
+<!-- Importera/dela-meny -->
+<div class="modal" id="m-import-menu" onclick="closeBg(event,'m-import-menu')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Importera / dela</div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Vad vill du göra?</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn-ghost" onclick="closeModal('m-import-menu');openImportProgram()" style="display:block;text-align:left;height:auto;padding:12px 14px;line-height:1.4;font-weight:700;color:var(--accent-4);border-color:var(--accent-4)"><i class="ti ti-sparkles"></i> Importera program med AI<div style="font-size:11px;color:var(--text-3);font-weight:400;margin-top:2px">PDF, bild, YouTube-länk eller text</div></button>
+      <button class="btn-ghost" onclick="closeModal('m-import-menu');openImportShare()" style="display:block;text-align:left;height:auto;padding:12px 14px;line-height:1.4;font-weight:700"><i class="ti ti-download"></i> Importera delning<div style="font-size:11px;color:var(--text-3);font-weight:400;margin-top:2px">Hämta pass/program från en annan atlet via kod</div></button>
+      <button class="btn-ghost" onclick="closeModal('m-import-menu');openShareProgram()" style="display:block;text-align:left;height:auto;padding:12px 14px;line-height:1.4;font-weight:700"><i class="ti ti-share"></i> Dela ett program<div style="font-size:11px;color:var(--text-3);font-weight:400;margin-top:2px">Skapa en delningskod att skicka till någon</div></button>
     </div>
   </div>
 </div>
@@ -765,6 +778,29 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <button class="btn-primary" onclick="confirmImport()" style="width:100%"><i class="ti ti-check"></i> Importera valda pass</button>
     </div>
 
+  </div>
+</div>
+
+<!-- Ta bort ett schemalagt program (flera veckor framåt) -->
+<div class="modal" id="m-remove-program" onclick="closeBg(event,'m-remove-program')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Ta bort schemalagt program</div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Ta bort alla inplanerade pass för ett program från ett visst datum och framåt. Övningar och själva passen påverkas inte — bara kalender-inplaneringen.</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label class="field-label">Program-tagg</label>
+        <select class="field-select" id="rp-tag" onchange="updateRemoveProgramPreview()"></select>
+      </div>
+      <div>
+        <label class="field-label">Ta bort från och med datum</label>
+        <input class="field-input" id="rp-from-date" type="date" onchange="updateRemoveProgramPreview()">
+      </div>
+      <div class="notice" id="rp-summary" style="font-size:12px;line-height:1.5"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="confirmRemoveProgram()" style="flex:1;background:#e8200a"><i class="ti ti-trash"></i> Ta bort inplanerade pass</button>
+        <button class="btn-ghost" onclick="closeModal('m-remove-program')">Avbryt</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1038,6 +1074,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div style="display:flex;flex-direction:column;gap:12px">
       <div><label class="field-label">Träningsform</label>
         <select class="field-select" id="np-form"></select>
+        <button type="button" onclick="openAddFormFromNewPass()" style="background:none;border:none;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;padding:6px 2px 0"><i class="ti ti-folder-plus"></i> Skapa ny träningsform</button>
       </div>
       <div><label class="field-label">Namn</label><input class="field-input" id="np-name" placeholder="T.ex. Explosivitet B"></div>
       <div><label class="field-label">Beskrivning</label><input class="field-input" id="np-desc" placeholder="Kort beskrivning av passet"></div>
@@ -1449,6 +1486,8 @@ let importBatchWarning=''; // sätts om någon batch misslyckades vid stor impor
 
 // Lagrar uppladdad PDF/bild som base64 så AI kan tolka filen direkt (utan text-extraktion i frontend)
 let importAttachment=null; // {type:'document'|'image', mediaType, base64, name, sizeMb}
+
+function openImportMenu(){ openModal('m-import-menu'); }
 
 function openImportProgram(){
   document.getElementById('imp-text').value='';
@@ -2928,6 +2967,7 @@ function confirmScheduleProgram(){
       date:iso,
       passId:pass.id,
       formId:form.id,
+      programTag:tag, // markera vilket program detta pass schemalades från (för borttagning)
       notes:''
     });
     added++;
@@ -2939,6 +2979,66 @@ function confirmScheduleProgram(){
   if(typeof renderCalendar==='function') renderCalendar();
   if(typeof renderHomeHero==='function') renderHomeHero();
   if(typeof renderWeekSchedule==='function') renderWeekSchedule();
+}
+
+/* ========== TA BORT SCHEMALAGT PROGRAM ========== */
+// Hitta vilka inplanerade pass som hör till en programtagg (via stämplad programTag,
+// eller fallback: passet har taggen i custom/formTags).
+function plannedMatchesTag(pw,tag){
+  if(pw.programTag) return pw.programTag===tag;
+  // Fallback för pass schemalagda innan programTag fanns: matcha via passets taggar
+  const r=findPass(pw.passId);
+  if(!r) return false;
+  const slug=tag.toLowerCase().replace(/\s+/g,'-');
+  return (r.pass.customTags||[]).includes(tag)||(r.pass.formTags||[]).includes(tag)||(r.pass.formTags||[]).includes(slug);
+}
+
+function openRemoveProgram(){
+  // Visa bara taggar som faktiskt har inplanerade pass
+  const tagCounts={};
+  plannedWorkouts.forEach(pw=>{
+    getProgramTags().forEach(t=>{ if(plannedMatchesTag(pw,t.tag)) tagCounts[t.tag]=(tagCounts[t.tag]||0)+1; });
+  });
+  const tags=Object.keys(tagCounts);
+  const select=document.getElementById('rp-tag');
+  if(!tags.length){
+    alert('Inga schemalagda program hittades. (Schemalägg ett program först, eller ta bort enstaka dagar direkt i kalendern.)');
+    return;
+  }
+  select.innerHTML=tags.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)} (${tagCounts[t]} inplanerade)</option>`).join('');
+  document.getElementById('rp-from-date').value=new Date().toISOString().slice(0,10);
+  updateRemoveProgramPreview();
+  openModal('m-remove-program');
+}
+
+function countRemovableProgram(tag,fromStr){
+  if(!tag||!fromStr) return 0;
+  return plannedWorkouts.filter(pw=>pw.date>=fromStr&&plannedMatchesTag(pw,tag)).length;
+}
+
+function updateRemoveProgramPreview(){
+  const tag=document.getElementById('rp-tag').value;
+  const fromStr=document.getElementById('rp-from-date').value;
+  const n=countRemovableProgram(tag,fromStr);
+  const el=document.getElementById('rp-summary');
+  if(!tag||!fromStr){el.innerHTML='⏳ Välj program och datum.';return;}
+  el.innerHTML=n?`🗑️ Tar bort <b>${n} inplanerade pass</b> för "${escapeHtml(tag)}" från och med ${fromStr}.`:`Inga inplanerade pass för "${escapeHtml(tag)}" från och med ${fromStr}.`;
+}
+
+function confirmRemoveProgram(){
+  const tag=document.getElementById('rp-tag').value;
+  const fromStr=document.getElementById('rp-from-date').value;
+  if(!tag||!fromStr){alert('Välj program och datum');return;}
+  const n=countRemovableProgram(tag,fromStr);
+  if(!n){alert('Inga inplanerade pass att ta bort för det valet');return;}
+  if(!confirm(`Ta bort ${n} inplanerade pass för "${tag}" från och med ${fromStr}? (Själva passen och övningarna behålls.)`)) return;
+  plannedWorkouts=plannedWorkouts.filter(pw=>!(pw.date>=fromStr&&plannedMatchesTag(pw,tag)));
+  saveState();
+  closeModal('m-remove-program');
+  if(typeof renderCalendar==='function') renderCalendar();
+  if(typeof renderHomeHero==='function') renderHomeHero();
+  if(typeof renderWeekSchedule==='function') renderWeekSchedule();
+  alert(`✅ ${n} inplanerade pass borttagna.`);
 }
 
 /* ========== DELNING (Fas 1: dela + ta emot) ========== */
@@ -4258,15 +4358,48 @@ function toggleFC(id){
   if(!open) el.classList.add('open');
 }
 
+// Stäng add-form via bakgrundsklick — om vi kom från nytt-pass: visa nytt-pass-modalen igen (avbrutet)
+function closeAddFormBg(e){
+  if(e.target.id!=='m-add-form') return;
+  closeModal('m-add-form');
+  if(addFormReturnToNewPass){
+    addFormReturnToNewPass=false;
+    openModal('m-new-pass');
+  }
+}
+
+// Öppna "Ny träningsform" från nytt-pass-flödet (m-new-pass ligger kvar bakom; vi återgår med den nya formen vald)
+let addFormReturnToNewPass=false;
+function openAddFormFromNewPass(){
+  addFormReturnToNewPass=true;
+  document.getElementById('nf-name').value='';
+  document.getElementById('nf-icon').value='💪';
+  const catSel=document.getElementById('nf-cat'); if(catSel) catSel.selectedIndex=0;
+  // Dölj nytt-pass-modalen så add-form hamnar överst (input-värden bevaras — vi togglar bara CSS)
+  closeModal('m-new-pass');
+  openModal('m-add-form');
+}
+
 function addForm(){
   const name=document.getElementById('nf-name').value.trim();
   const icon=document.getElementById('nf-icon').value.trim()||'💪';
   const cat=document.getElementById('nf-cat').value;
   if(!name) return;
-  trainingForms.push({id:crypto.randomUUID(),name,icon,cat,passTypes:[]});
+  const newId=crypto.randomUUID();
+  trainingForms.push({id:newId,name,icon,cat,passTypes:[]});
   closeModal('m-add-form');
-  renderPassList();
   saveState();
+  renderPassList();
+  // Om vi kom från nytt-pass-flödet: fyll om dropdownen, förvälj den nya formen och visa modalen igen
+  if(addFormReturnToNewPass){
+    addFormReturnToNewPass=false;
+    const ms=document.getElementById('np-form');
+    if(ms){
+      ms.innerHTML=trainingForms.map(f=>`<option value="${f.id}">${f.icon} ${f.name}</option>`).join('');
+      ms.value=newId;
+    }
+    openModal('m-new-pass'); // visa igen (np-name/desc/taggar bevarades)
+  }
 }
 
 function openNewPass(){
