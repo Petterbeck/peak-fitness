@@ -326,7 +326,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div class="topbar">
   <div class="brand"><span class="brand-mark">🏔️</span><span class="brand-name">Peak Fitness</span></div>
   <div class="top-right">
-    <div class="streak" title="Tränat 7 dagar i rad (streak)"><i class="ti ti-flame" style="font-size:12px"></i> 7</div>
+    <div class="streak" id="peak-score-chip" onclick="showPeakInfo()" title="Peak Score — vägt mått på din träning de senaste 7 dagarna" style="cursor:pointer">💪 0</div>
+    <div class="streak" id="streak-chip" title="Tränat X dagar i rad (streak)"><i class="ti ti-flame" style="font-size:12px"></i> 7</div>
     <button class="icon-btn avatar-btn" onclick="navigate('page-profile')" id="profile-btn" title="Profil">E</button>
   </div>
 </div>
@@ -957,8 +958,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="modal-title">Redigera profil</div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <div><label class="field-label">Namn</label><input class="field-input" id="pe-name" placeholder="Ditt namn"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-        <div><label class="field-label">Ålder</label><input class="field-input" id="pe-age" type="number" min="1" max="120" placeholder="–"></div>
+      <div><label class="field-label">Födelsedatum <span id="pe-age-out" style="color:var(--text-3);font-weight:400"></span></label><input class="field-input" id="pe-birthdate" type="date" oninput="updatePeAge()"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div><label class="field-label">Vikt kg</label><input class="field-input" id="pe-weight" type="number" min="1" step="0.5" placeholder="–"></div>
         <div><label class="field-label">Längd cm</label><input class="field-input" id="pe-height" type="number" min="1" placeholder="–"></div>
       </div>
@@ -1431,11 +1432,30 @@ const LEVEL_OPTIONS=[
   {id:'advanced',label:'Avancerad'}
 ];
 
+// Beräkna ålder (hela år) från ISO-födelsedatum
+function calcAge(iso){
+  if(!iso) return null;
+  const b=new Date(iso); if(isNaN(b.getTime())) return null;
+  const now=new Date();
+  let age=now.getFullYear()-b.getFullYear();
+  const m=now.getMonth()-b.getMonth();
+  if(m<0||(m===0&&now.getDate()<b.getDate())) age--;
+  return (age>=0&&age<150)?age:null;
+}
+// Live-visning av ålder bredvid födelsedatum-fältet
+function updatePeAge(){
+  const v=document.getElementById('pe-birthdate').value;
+  const a=calcAge(v);
+  const out=document.getElementById('pe-age-out');
+  if(out) out.textContent=a!=null?`(${a} år)`:'';
+}
+
 function openEditProfile(){
   document.getElementById('pe-name').value=userProfile.name||'';
-  document.getElementById('pe-age').value=userProfile.age||'';
+  document.getElementById('pe-birthdate').value=userProfile.birthDate||'';
   document.getElementById('pe-weight').value=userProfile.weightKg||'';
   document.getElementById('pe-height').value=userProfile.heightCm||'';
+  updatePeAge();
   pendingLevel=userProfile.level||'beginner';
   const chips=document.getElementById('pe-level-chips');
   chips.innerHTML=LEVEL_OPTIONS.map(l=>`<button class="filter-chip ${pendingLevel===l.id?'active':''}" data-level="${l.id}" onclick="setProfileLevel('${l.id}',this)">${l.label}</button>`).join('');
@@ -1450,10 +1470,11 @@ function setProfileLevel(id,btn){
 
 function saveProfile(){
   userProfile.name=document.getElementById('pe-name').value.trim()||'Du';
-  const ageVal=document.getElementById('pe-age').value;
+  const bVal=document.getElementById('pe-birthdate').value;
   const wVal=document.getElementById('pe-weight').value;
   const hVal=document.getElementById('pe-height').value;
-  userProfile.age=ageVal?parseInt(ageVal):null;
+  userProfile.birthDate=bVal||null;
+  userProfile.age=bVal?calcAge(bVal):userProfile.age; // ålder härleds från födelsedatum
   userProfile.weightKg=wVal?parseFloat(wVal):null;
   userProfile.heightCm=hVal?parseFloat(hVal):null;
   userProfile.level=pendingLevel||'beginner';
@@ -1468,8 +1489,9 @@ function renderProfileInfo(){
   const nameEl=document.getElementById('profile-name');
   if(nameEl) nameEl.textContent=userProfile.name||'Du';
   const parts=[];
-  if(userProfile.age) parts.push(`${userProfile.age} år`);
-  if(userProfile.weightKg) parts.push(`${userProfile.weightKg} kg`);
+  const age=userProfile.birthDate?calcAge(userProfile.birthDate):userProfile.age;
+  if(age) parts.push(`${age} år`);
+  if(userProfile.weightKg) parts.push(`${fmtNum(userProfile.weightKg)} kg`);
   if(userProfile.heightCm) parts.push(`${userProfile.heightCm} cm`);
   const infoEl=document.getElementById('profile-info');
   if(infoEl) infoEl.textContent=parts.length?parts.join(' · '):'Fyll i din profil';
@@ -3592,6 +3614,7 @@ async function syncToCloud(silent){
         email:currentUser.email||null,
         name:userProfile.name||null,
         age:toInt(userProfile.age),
+        birth_date:userProfile.birthDate||null,
         weight_kg:userProfile.weightKg||null,
         height_cm:userProfile.heightCm||null,
         level:userProfile.level||'beginner'
@@ -3747,6 +3770,7 @@ async function loadFromCloud(silent){
       userProfile={
         name:p.name||userProfile.name,
         age:p.age||userProfile.age,
+        birthDate:p.birth_date||userProfile.birthDate||null,
         weightKg:p.weight_kg||userProfile.weightKg,
         heightCm:p.height_cm||userProfile.heightCm,
         level:p.level||userProfile.level||'beginner'
@@ -3793,7 +3817,7 @@ async function loadFromCloud(silent){
     // Nu har vi en färsk kopia av molnet → säkert att låta sync radera borttagna rader
     cloudLoadComplete=true;
     // Refresh alla vyer
-    renderHomeHero();renderHomeStats();renderStreak();renderProfileInfo();renderCalendar();renderWeekSchedule();renderPassList();renderExercises();renderGoals();
+    renderHomeHero();renderHomeStats();renderStreak();renderPeakScore();renderProfileInfo();renderCalendar();renderWeekSchedule();renderPassList();renderExercises();renderGoals();
     if(!silent) setSyncStatus('✓ Hämtat från molnet '+new Date().toLocaleTimeString('sv-SE'),'ok');
     return true;
   }catch(e){
@@ -3859,7 +3883,7 @@ function restoreAllData(data){
   if(Array.isArray(data.workoutHistory)) workoutHistory=data.workoutHistory;
   saveState();
   // Refresh alla vyer
-  renderHomeHero();renderHomeStats();renderStreak();renderProfileInfo();renderCalendar();renderWeekSchedule();renderPassList();renderExercises();renderGoals();
+  renderHomeHero();renderHomeStats();renderStreak();renderPeakScore();renderProfileInfo();renderCalendar();renderWeekSchedule();renderPassList();renderExercises();renderGoals();
 }
 
 // Återställ från en uppladdad fil
@@ -4205,7 +4229,7 @@ let workoutHistory=[];
 let plannedWorkouts=[]; // {id, date:'YYYY-MM-DD', passId, formId, notes}
 let dayModalDate=null;
 // Atletens profil (för "egen vikt"-övningar etc) — koppling till editerbar profil kommer senare
-let userProfile={name:'Erik',weightKg:82,heightCm:183,age:42};
+let userProfile={name:'Erik',weightKg:82,heightCm:183,age:42,birthDate:null};
 
 /* ========== STORAGE ========== */
 const STORAGE_KEY='alpinfys_v2';
@@ -4271,7 +4295,7 @@ function navigate(id){
   const m={'page-home':'nav-home','page-plan':'nav-plan','page-log':'nav-home','page-history':'nav-history','page-coach':'nav-coach','page-profile':'nav-home','page-stats':'nav-home'};
   if(m[id]) document.getElementById(m[id])?.classList.add('active');
   if(id==='page-stats') setTimeout(renderStatsPage,50);
-  if(id==='page-home'){renderHomeHero();renderHomeStats();renderStreak();renderGoals();}
+  if(id==='page-home'){renderHomeHero();renderHomeStats();renderStreak();renderPeakScore();renderGoals();}
   if(id==='page-plan'){renderWeekSchedule();renderCalendar();}
   if(id==='page-log') renderLogPassList();
   if(id==='page-history') renderHistory();
@@ -5226,7 +5250,7 @@ function addS(ei){const last=loggedExs[ei].sets.at(-1)||{w:0,r:0};loggedExs[ei].
 function rmLogEx(ei){loggedExs.splice(ei,1);renderLogExs();}
 function setFeel(n,btn){feelRating=n;document.querySelectorAll('.feel-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');}
 function finishLog(){
-  workoutHistory.push({
+  const newWorkout={
     id:crypto.randomUUID(),
     date:new Date().toISOString(),
     passName:selectedPass?.name||'Pass',
@@ -5240,11 +5264,17 @@ function finishLog(){
       name:ex.name,cat:ex.cat,
       sets:ex.sets.map(s=>({w:s.w,r:s.r,done:!!s.done}))
     }))
-  });
+  };
+  workoutHistory.push(newWorkout);
   saveState();
-  // Uppdatera stats + streak + profil-passcount + mål-progress baserat på nya passet
+  // Peak Score-feedback: poäng för detta pass + ny total
+  const pts=workoutPoints(newWorkout);
+  const score=calcPeakScore();
+  const tier=peakTier(score);
+  // Uppdatera stats + streak + score + profil-passcount + mål-progress baserat på nya passet
   renderHomeStats();
   renderStreak();
+  renderPeakScore();
   renderProfileInfo();
   renderGoals();
   clearInterval(timerInterval);
@@ -5254,6 +5284,7 @@ function finishLog(){
   document.querySelectorAll('.feel-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('log-note').value='';
   navigate('page-home');
+  setTimeout(()=>showToast(`💥 +${pts} p! Peak Score: <b>${score}</b> ${tier.icon} ${tier.label}`,4000),350);
 }
 function cancelLog(){clearInterval(timerInterval);document.getElementById('log-active').style.display='none';document.getElementById('log-select').style.display='flex';}
 
@@ -5328,6 +5359,38 @@ function calcAvgFeel(workouts){
   const feels=workouts.map(w=>w.feel).filter(f=>f);
   if(!feels.length) return null;
   return feels.reduce((a,b)=>a+b,0)/feels.length;
+}
+
+/* ========== PEAK SCORE (belöningsmått — rullande 7 dagar) ========== */
+const PEAK_W={bas:40,volDiv:100,km:12,rep:0.3}; // justerbara vikter
+const PEAK_TIERS=[
+  {min:900,label:'Beast',icon:'🏔️'},
+  {min:600,label:'På topp',icon:'🔥'},
+  {min:350,label:'Stark',icon:'💪'},
+  {min:150,label:'Igång',icon:'🟢'},
+  {min:0,label:'Vilar',icon:'😴'}
+];
+function peakTier(score){return PEAK_TIERS.find(t=>score>=t.min)||PEAK_TIERS[PEAK_TIERS.length-1];}
+
+// Poäng för ETT pass: (bas + volym + distans + reps) × kvalitetsfaktor
+function workoutPoints(w){
+  if(!w) return 0;
+  const one=[w];
+  const vol=calcVolume(one);   // kg×reps (styrka/egenvikt, done-set)
+  const km=calcDistance(one);  // km (cardio, done-set)
+  let reps=0;
+  (w.exercises||[]).forEach(ex=>{ if(ex.cat==='cardio') return; (ex.sets||[]).forEach(s=>{ if(s.done) reps+=(s.r||0); }); });
+  const raw=PEAK_W.bas + vol/PEAK_W.volDiv + km*PEAK_W.km + reps*PEAK_W.rep;
+  const feel=w.feel||3;
+  const q=Math.max(0.6,Math.min(1.2,0.8+(feel-3)*0.1)); // feel 1→0.6 ... 3→1.0 ... 5→1.2
+  return Math.round(raw*q);
+}
+
+// Peak Score = summa passpoäng senaste 7 dagarna
+function calcPeakScore(){
+  const start=getDaysAgo(7);
+  const end=new Date(); end.setHours(23,59,59,999);
+  return getWorkoutsInPeriod(start,end).reduce((s,w)=>s+workoutPoints(w),0);
 }
 
 function calcStreak(){
@@ -5439,12 +5502,44 @@ function getExerciseProgressData(exerciseName){
 }
 
 function renderStreak(){
-  const el=document.querySelector('.streak');
+  const el=document.getElementById('streak-chip');
   if(!el) return;
   const streak=calcStreak();
   el.innerHTML=`<i class="ti ti-flame" style="font-size:12px"></i> ${streak}`;
   el.title=streak===0?'Inga pass loggade än':`Tränat ${streak} dag${streak===1?'':'ar'} i rad (streak)`;
   el.style.opacity=streak===0?'0.5':'1';
+}
+
+// Peak Score-chip i toppbaren
+function renderPeakScore(){
+  const el=document.getElementById('peak-score-chip');
+  if(!el) return;
+  const score=calcPeakScore();
+  const tier=peakTier(score);
+  el.innerHTML=`${tier.icon} ${score}`;
+  el.title=`Peak Score: ${score} (${tier.label}) — vägt mått på din träning de senaste 7 dagarna. Klicka för info.`;
+  el.style.opacity=score===0?'0.5':'1';
+}
+
+function showPeakInfo(){
+  const score=calcPeakScore();
+  const tier=peakTier(score);
+  alert(`💥 Peak Score: ${score} — ${tier.icon} ${tier.label}\n\nEtt vägt mått på din träning de senaste 7 dagarna. Poäng från varje pass: bas + volym (kg×reps) + distans (km) + reps, justerat för hur passet kändes.\n\nNivåer:\n😴 Vilar (0)\n🟢 Igång (150)\n💪 Stark (350)\n🔥 På topp (600)\n🏔️ Beast (900)\n\nTräna regelbundet för att höja och hålla uppe din score — gamla pass faller ur efter 7 dagar!`);
+}
+
+// Liten toast längst ner (för t.ex. Peak Score-feedback efter pass)
+function showToast(html,ms){
+  let t=document.getElementById('app-toast');
+  if(!t){
+    t=document.createElement('div');
+    t.id='app-toast';
+    t.style.cssText='position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:var(--text-1);color:var(--surface);padding:12px 18px;border-radius:var(--r);font-size:13px;font-weight:700;box-shadow:0 8px 30px rgba(0,0,0,0.25);z-index:9999;text-align:center;max-width:90vw;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none';
+    document.body.appendChild(t);
+  }
+  t.innerHTML=html;
+  requestAnimationFrame(()=>{t.style.opacity='1';t.style.transform='translateX(-50%) translateY(-6px)';});
+  clearTimeout(t._timer);
+  t._timer=setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(-50%)';},ms||3500);
 }
 
 /* ========== HOME HERO ========== */
@@ -6213,7 +6308,7 @@ function saveWorkoutEdits(){
   workoutEditMode=false;
   renderWorkoutDetail();
   // Recompute alla vyer eftersom ändringen kan påverka mål/stats
-  renderHomeStats();renderStreak();renderProfileInfo();renderGoals();renderCalendar();
+  renderHomeStats();renderStreak();renderPeakScore();renderProfileInfo();renderGoals();renderCalendar();
   if(dayModalDate) renderDayCompletedList();
 }
 
@@ -6230,6 +6325,7 @@ function deleteWorkoutLog(){
   renderHomeHero();
   renderHomeStats();
   renderStreak();
+  renderPeakScore();
   renderProfileInfo();
   renderGoals();
 }
@@ -6656,6 +6752,7 @@ renderProfileInfo();
 renderHomeHero();
 renderHomeStats();
 renderStreak();
+renderPeakScore();
 renderCalendar();
 renderWeekSchedule();
 checkAuth().then(ok=>{if(ok){renderProfileUser();loadFromCloud(true);}});

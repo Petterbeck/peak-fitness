@@ -24,6 +24,8 @@ create table if not exists public.profiles (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+-- Tillägg: födelsedatum (ålder beräknas i appen)
+alter table public.profiles add column if not exists birth_date date;
 
 -- ------------------------------------------------------------
 -- 2. EXERCISES (övningsbanken)
