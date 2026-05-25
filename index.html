@@ -3414,6 +3414,14 @@ function scheduleSyncToCloud(){
 // Skyddar mot att en tidig sync raderar moln-data innan vi hämtat den.
 let cloudLoadComplete=false;
 
+// Tvinga ett värde till heltal för Postgres int-kolumner (annars kraschar sync på t.ex. 0.25).
+// Decimaler avrundas; ogiltiga/null-värden ger fallback.
+function toInt(v,fallback=null){
+  if(v===null||v===undefined||v==='') return fallback;
+  const n=Math.round(Number(v));
+  return Number.isFinite(n)?n:fallback;
+}
+
 // Radera moln-rader som inte längre finns lokalt (= användaren tog bort dem).
 // Utan detta "återföds" borttagna pass/övningar/mål vid refresh, eftersom sync bara gjorde upsert.
 async function deleteCloudOrphans(table,localIds,uid){
@@ -3462,7 +3470,7 @@ async function syncToCloud(silent){
         id:uid,
         email:currentUser.email||null,
         name:userProfile.name||null,
-        age:userProfile.age||null,
+        age:toInt(userProfile.age),
         weight_kg:userProfile.weightKg||null,
         height_cm:userProfile.heightCm||null,
         level:userProfile.level||'beginner'
@@ -3481,7 +3489,7 @@ async function syncToCloud(silent){
       const {error}=await supa.from('exercises').upsert(exercises.map(ex=>({
         id:ex.id,user_id:uid,name:ex.name,muscle:ex.muscle,
         form_tags:ex.formTags||[],custom_tags:ex.customTags||[],
-        default_sets:ex.defaultSets,default_reps:ex.defaultReps,
+        default_sets:toInt(ex.defaultSets,3),default_reps:toInt(ex.defaultReps,0),
         media_url:ex.mediaUrl,video_url:ex.videoUrl||null,fav:!!ex.fav,note:ex.note||''
       })));
       if(error) throw error;
@@ -3518,9 +3526,9 @@ async function syncToCloud(silent){
         name:g.name,
         current_value:g.current||null,
         target_value:g.target||null,
-        progress:g.progress||0,
+        progress:toInt(g.progress,0),
         color:g.color||'#e8440a',
-        target_weeks:g.targetWeeks||null,
+        target_weeks:toInt(g.targetWeeks),
         tracking_mode:g.trackingMode||'manual',
         exercise_name:g.exerciseName||null,
         metric:g.metric||null,
@@ -3535,7 +3543,7 @@ async function syncToCloud(silent){
     if(workoutHistory.length){
       const {error}=await supa.from('workout_history').upsert(workoutHistory.map(w=>({
         id:w.id,user_id:uid,pass_name:w.passName||'',form_name:w.formName||'',form_cat:w.formCat||'',
-        performed_at:w.date,duration_seconds:w.duration,feel:w.feel||null,note:w.note||'',
+        performed_at:w.date,duration_seconds:toInt(w.duration,0),feel:toInt(w.feel),note:w.note||'',
         exercises:w.exercises||[]
       })));
       if(error) throw error;
