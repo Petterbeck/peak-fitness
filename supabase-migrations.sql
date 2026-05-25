@@ -50,6 +50,10 @@ alter table public.exercises add column if not exists video_url text;
 alter table public.exercises add column if not exists default_distance numeric;
 alter table public.exercises add column if not exists default_time numeric;
 alter table public.exercises add column if not exists pulse_zone int;
+-- Tillägg: klassificering som persistar (annars re-deriveras/tappas vid sync)
+alter table public.exercises add column if not exists primary_form text;
+alter table public.exercises add column if not exists use_bodyweight boolean default false;
+alter table public.exercises add column if not exists sub_tags jsonb default '[]'::jsonb;
 
 -- ------------------------------------------------------------
 -- 3. TRAINING FORMS

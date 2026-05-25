@@ -691,7 +691,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div style="display:flex;flex-direction:column;gap:12px">
       <div><label class="field-label">Namn</label><input class="field-input" id="nf-name" placeholder="T.ex. Cykling"></div>
       <div><label class="field-label">Ikon</label><input class="field-input" id="nf-icon" placeholder="🚴" value="💪"></div>
-      <div><label class="field-label">Kategori</label><select class="field-select" id="nf-cat"><option value="strength">Styrketräning</option><option value="cardio">Kondition</option><option value="mobility">Rörlighet/Yoga</option></select></div>
+      <div><label class="field-label">Basbeteende (styr vilka fält övningarna får)</label><select class="field-select" id="nf-cat"><option value="strength">Styrka (vikt + reps)</option><option value="running">Kondition (distans + tid + puls)</option><option value="mobility">Rörlighet (område + tid)</option><option value="other">Enkelt (bara set + reps)</option></select></div>
       <button class="btn-primary" onclick="addForm()"><i class="ti ti-check"></i> Skapa</button>
     </div>
   </div>
@@ -1916,12 +1916,13 @@ Format:
     {
       "name": "string (utan prefix - vi lägger på det)",
       "description": "kort beskrivning",
-      "primaryForm": "strength|bodyweight|running|cycling|mobility|group|other",
+      "primaryForm": "strength|running|cycling|mobility|group",
       "subTags": ["string", ...],
       "exercises": [
         {
           "name": "string (svenska)",
           "muscle": "Bröst|Rygg|Ben|Axlar|Armar|Bål|Höft|Ryggrad|Kondition|Explosivitet|Rörlighet",
+          "useBodyweight": true|false,
           "sets": number,
           "reps": number eller null,
           "weight": number eller null,
@@ -1936,10 +1937,10 @@ Format:
 }
 
 Viktigt:
-- primaryForm MÅSTE vara en av: strength, bodyweight, running, cycling, mobility, group, other
+- primaryForm MÅSTE vara en av: strength, running, cycling, mobility, group. (Egen vikt är INTE en typ.)
+- "Egen vikt" är en EGENSKAP per övning, inte en träningsform. Sätt "useBodyweight": true på övningar som görs med egen kroppsvikt (chins, dips, armhävningar, plankor, utfall utan vikt, situps...) — annars false. Sådana övningar ligger under primaryForm=strength.
 - För cardio (running/cycling): använd distance (km) + time (min), sätt reps=null
-- För styrka: använd weight (kg) + reps
-- För egen vikt: weight kan vara null
+- För styrka: använd weight (kg) + reps. För egenvikt-övningar: weight kan vara null + useBodyweight=true.
 - Översätt övningar till svenska om de är på annat språk
 - Om en övning är "8x400m" → sets=8, distance=0.4, time=null, primaryForm=running, muscle=Kondition`;
   try{
@@ -2792,9 +2793,11 @@ function applyExAnalyze(){
 const PRIMARY_TO_FORM_CAT={strength:'strength',bodyweight:'strength',running:'cardio',cycling:'cardio',mobility:'mobility',group:'strength',other:'strength'};
 
 function guessTrainingForm(primaryForm){
-  const cat=PRIMARY_TO_FORM_CAT[primaryForm]||'strength';
-  // Hitta första träningsform som matchar cat
-  return trainingForms.find(f=>f.cat===cat)||trainingForms[0];
+  const pf=primaryForm==='bodyweight'?'strength':primaryForm;
+  // Matcha i första hand på formens primaryForm, annars på cat, annars första
+  return trainingForms.find(f=>f.primaryForm===pf)
+       ||trainingForms.find(f=>f.cat===(PRIMARY_TO_FORM_CAT[pf]||'strength'))
+       ||trainingForms[0];
 }
 
 function renderImportPreview(){
@@ -2812,7 +2815,8 @@ function renderImportPreview(){
       const dist=e.distance?` · ${fmtNum(e.distance)} km`:'';
       const w=e.weight?` · ${fmtNum(e.weight)} kg`:'';
       const pz=e.pulseZone?` · Z${e.pulseZone}`:'';
-      return `<div style="padding:3px 0;border-bottom:0.5px solid var(--border);font-size:11px"><b>${e.name}</b> <span style="color:var(--text-3)">· ${e.muscle||'–'} · ${setsReps}${dist}${w}${pz}</span></div>`;
+      const bw=e.useBodyweight?' · 🤸 egen vikt':'';
+      return `<div style="padding:3px 0;border-bottom:0.5px solid var(--border);font-size:11px"><b>${e.name}</b> <span style="color:var(--text-3)">· ${e.muscle||'–'} · ${setsReps}${dist}${w}${pz}${bw}</span></div>`;
     }).join('');
     return `
     <div class="card" style="padding:12px">
@@ -2820,15 +2824,9 @@ function renderImportPreview(){
         <input type="checkbox" id="imp-include-${i}" checked style="width:20px;height:20px;accent-color:var(--accent);cursor:pointer">
         <input type="text" class="field-input" id="imp-name-${i}" value="${(prefix?prefix+' - ':'')+p.name}" style="flex:1;font-weight:700;font-size:14px">
       </label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <div>
-          <div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase;margin-bottom:3px">Träningsform (mapp)</div>
-          <select class="field-select" id="imp-form-${i}" style="font-size:12px;width:100%">${setOptions}</select>
-        </div>
-        <div>
-          <div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase;margin-bottom:3px">Övningstyp (styr fält)</div>
-          <select class="field-select" id="imp-primary-${i}" style="font-size:12px;width:100%">${PRIMARY_FORMS.map(f=>`<option value="${f.id}" ${f.id===p.primaryForm?'selected':''}>${f.icon} ${f.label}</option>`).join('')}</select>
-        </div>
+      <div style="margin-bottom:8px">
+        <div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase;margin-bottom:3px">Träningsform</div>
+        <select class="field-select" id="imp-form-${i}" style="font-size:12px;width:100%">${setOptions}</select>
       </div>
       <div style="margin-bottom:8px">
         <div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase;margin-bottom:3px">Egna taggar (sökbara, komma-separerat)</div>
@@ -3336,26 +3334,29 @@ async function confirmImport(){
     const p=data.passes[i];
     const passName=document.getElementById('imp-name-'+i).value.trim()||p.name;
     let formIdChoice=document.getElementById('imp-form-'+i).value;
-    const pfChoice=document.getElementById('imp-primary-'+i).value;
     // Per-pass taggar (editerbara i preview, default = globala taggen)
     const tags=(document.getElementById('imp-tags-'+i)?.value||tag||'').split(',').map(s=>s.trim()).filter(Boolean);
     // Hämta video-URL för exakt detta pass (om YouTube-import)
     const videoUrlForPass=ytVideos?(ytVideos[i%ytVideos.length]?.sourceUrl||null):null;
+    // AI:s föreslagna typ (egen vikt är inte längre en egen typ)
+    const pPrimary=(p.primaryForm==='bodyweight'?'strength':p.primaryForm)||'strength';
     // Skapa ny träningsform om valt
     let form;
     if(formIdChoice==='__new__'){
       const newName=importedData.prefix||p.name.split(' ')[0]||'Importerad';
       form=trainingForms.find(f=>f.name===newName);
       if(!form){
-        const cat=PRIMARY_TO_FORM_CAT[pfChoice]||'strength';
-        const iconMap={strength:'🏋️',bodyweight:'🤸',cardio:'🏃',mobility:'🧘'};
-        form={id:crypto.randomUUID(),name:newName,icon:iconMap[cat]||'💪',cat,passTypes:[]};
+        const cat=PRIMARY_TO_FORM_CAT[pPrimary]||'strength';
+        const pfInfo=PRIMARY_FORM_BY_ID[pPrimary];
+        form={id:crypto.randomUUID(),name:newName,icon:(pfInfo&&pfInfo.icon)||'💪',cat,primaryForm:pPrimary,passTypes:[]};
         trainingForms.push(form);
       }
     }else{
       form=trainingForms.find(f=>f.id===formIdChoice);
     }
     if(!form) form=trainingForms[0];
+    // Typ styrs nu av den valda formen (en enda dropdown)
+    const pfChoice=form.primaryForm||formPrimaryFromMeta(form)||'strength';
     lastFormId=form.id;
     // Skapa övningar i banken (skippa dubbletter)
     const exerciseRefs=[];
@@ -3363,7 +3364,9 @@ async function confirmImport(){
       let ex=exercises.find(e=>e.name.toLowerCase().trim()===exData.name.toLowerCase().trim());
       if(!ex){
         const isCardio=pfChoice==='running'||pfChoice==='cycling';
-        const isBw=pfChoice==='bodyweight';
+        const isBw=!!exData.useBodyweight; // egen vikt avgörs PER ÖVNING (AI gissar), inte av typen
+        const exSubTags=[...(p.subTags||[])];
+        if(isBw&&!exSubTags.includes('Egen vikt')) exSubTags.push('Egen vikt');
         ex={
           id:crypto.randomUUID(),
           name:exData.name,
@@ -3377,7 +3380,7 @@ async function confirmImport(){
           defaultDistance:exData.distance||null,
           defaultTime:exData.time||null,
           formTags:inferFormTags(isCardio?'cardio':isBw?'bodyweight':'strength',form.cat),
-          subTags:p.subTags||[],
+          subTags:exSubTags,
           customTags:[...tags],
           note:exData.note||'',
           fav:false,
@@ -3609,6 +3612,7 @@ async function syncToCloud(silent){
         form_tags:ex.formTags||[],custom_tags:ex.customTags||[],
         default_sets:toInt(ex.defaultSets,3),default_reps:toInt(ex.defaultReps,0),
         default_distance:toNum(ex.defaultDistance),default_time:toNum(ex.defaultTime),pulse_zone:toInt(ex.pulseZone),
+        primary_form:ex.primaryForm||null,use_bodyweight:!!ex.useBodyweight,sub_tags:ex.subTags||[],
         media_url:ex.mediaUrl,video_url:ex.videoUrl||null,fav:!!ex.fav,note:ex.note||''
       })));
       if(error) throw error;
@@ -3768,6 +3772,7 @@ async function loadFromCloud(silent){
       formTags:ex.form_tags||[],customTags:ex.custom_tags||[],
       defaultSets:ex.default_sets,defaultReps:ex.default_reps,
       defaultDistance:ex.default_distance??null,defaultTime:ex.default_time??null,pulseZone:ex.pulse_zone??null,
+      primaryForm:ex.primary_form||null,useBodyweight:!!ex.use_bodyweight,subTags:ex.sub_tags||[],
       mediaUrl:ex.media_url,videoUrl:ex.video_url||null,fav:ex.fav,note:ex.note||''
     }));
     // Migrera så cloud-data också får primärform (fält som inte syncas än)
@@ -3779,8 +3784,11 @@ async function loadFromCloud(silent){
       id:w.id,passName:w.pass_name,formName:w.form_name,formCat:w.form_cat,
       date:w.performed_at,duration:w.duration_seconds,feel:w.feel,note:w.note,exercises:w.exercises||[]
     }));
-    // Slå ihop egen-vikt-formen till Styrketräning även på moln-data (efter att pass + planerade pass byggts)
+    // Migrera klassificering även på moln-data (efter att pass + planerade pass byggts)
     migrateMergeStrengthForms();
+    migrateBodyweightToStrength();
+    migrateMobilityAreas();
+    ensureDefaultForms();
     saveState();
     // Nu har vi en färsk kopia av molnet → säkert att låta sync radera borttagna rader
     cloudLoadComplete=true;
@@ -3964,28 +3972,34 @@ const FORM_TAGS=[
 ];
 const FORM_TAG_BY_ID=Object.fromEntries(FORM_TAGS.map(t=>[t.id,t]));
 
-/* PRIMÄRA TRÄNINGSFORMER — styr vilka fält som visas på övningen */
+/* TRÄNINGSFORMER (= typ) — styr vilka fält som visas på övningen OCH passets mapp.
+   'pickable' = valbar som träningsform vid import/skapande. Egen vikt är INTE en egen typ
+   (det är en kryssruta + subtyp under Styrketräning). 'other' = basbeteendet "Enkelt" för egna former. */
 const PRIMARY_FORMS=[
-  {id:'strength',label:'Styrketräning',icon:'🏋️',color:'#5b52f0'},
-  {id:'bodyweight',label:'Egen vikt',icon:'🤸',color:'#f5a800'},
-  {id:'running',label:'Löpning',icon:'🏃',color:'#00c896'},
-  {id:'cycling',label:'Cykling',icon:'🚴',color:'#00a8d6'},
-  {id:'mobility',label:'Rörlighet / Yoga',icon:'🧘',color:'#a78bfa'},
-  {id:'group',label:'Gruppass',icon:'👥',color:'#ec4899'},
-  {id:'other',label:'Övrigt',icon:'💪',color:'#68655c'}
+  {id:'strength',label:'Styrketräning',icon:'🏋️',color:'#5b52f0',pickable:true},
+  {id:'running',label:'Löpning',icon:'🏃',color:'#00c896',pickable:true},
+  {id:'cycling',label:'Cykling',icon:'🚴',color:'#00a8d6',pickable:true},
+  {id:'mobility',label:'Rörlighet / Yoga',icon:'🧘',color:'#a78bfa',pickable:true},
+  {id:'group',label:'Gruppass',icon:'👥',color:'#ec4899',pickable:true},
+  {id:'other',label:'Övrigt',icon:'💪',color:'#68655c',pickable:false}
 ];
+const PICKABLE_FORMS=PRIMARY_FORMS.filter(f=>f.pickable);
 
-// Helper: alltid returnera en effektiv primärform, även för gamla övningar utan fält
+// Helper: alltid returnera en effektiv primärform. Egen vikt är inte längre en egen typ → strength.
 function getPrimaryForm(ex){
-  if(ex&&ex.primaryForm) return ex.primaryForm;
+  const pf=ex&&ex.primaryForm;
+  if(pf==='bodyweight') return 'strength';
+  if(pf) return pf;
   const tags=(ex&&ex.formTags)||[];
   if(tags.includes('kondition')) return 'running';
-  if(tags.includes('egenvikt')&&!tags.includes('gym')) return 'bodyweight';
   if(tags.includes('rorlighet')||tags.includes('yoga')) return 'mobility';
   return 'strength';
 }
 const PRIMARY_FORM_BY_ID=Object.fromEntries(PRIMARY_FORMS.map(f=>[f.id,f]));
 const CARDIO_FORMS=['running','cycling'];
+
+// Områden för Rörlighet/Yoga (ersätter MUSCLE_TAGS i ex-f-m-area). "Rörlighet" borttaget (= huvudgruppen).
+const MOBILITY_AREAS=['Höft','Knä','Fotled','Axlar','Ryggrad','Armar','Ben','Bål','Kroppskontroll','Koordination'];
 
 const PULSE_ZONES=[
   {id:1,label:'Z1',desc:'Återhämtning · 50-60% av maxpuls'},
@@ -4042,6 +4056,55 @@ function migrateMergeStrengthForms(){
       trainingForms.splice(i,1);changed=true;
     }
   }
+  if(changed) saveState();
+}
+
+// Härled en forms primaryForm (basbeteende) från namn/kategori
+function formPrimaryFromMeta(f){
+  const byName={'Styrketräning':'strength','Löpning':'running','Cykling':'cycling','Rörlighet / Yoga':'mobility','Gruppass':'group'};
+  if(byName[f.name]) return byName[f.name];
+  const byCat={strength:'strength',cardio:'running',bodyweight:'strength',mobility:'mobility'};
+  return byCat[f.cat]||'strength';
+}
+
+// Sätt primaryForm på alla träningsformer + säkerställ att de 5 standardtyperna finns
+function ensureDefaultForms(){
+  let changed=false;
+  trainingForms.forEach(f=>{ if(!f.primaryForm){ f.primaryForm=formPrimaryFromMeta(f); changed=true; } });
+  const defaults=[
+    {name:'Cykling',icon:'🚴',cat:'cardio',primaryForm:'cycling'},
+    {name:'Gruppass',icon:'👥',cat:'strength',primaryForm:'group'}
+  ];
+  defaults.forEach(d=>{
+    if(!trainingForms.some(f=>f.name===d.name||f.primaryForm===d.primaryForm)){
+      trainingForms.push({id:crypto.randomUUID(),name:d.name,icon:d.icon,cat:d.cat,primaryForm:d.primaryForm,passTypes:[]});
+      changed=true;
+    }
+  });
+  if(changed) saveState();
+}
+
+// Egen vikt är inte längre en egen typ: övningar med primaryForm='bodyweight' → strength + kryssruta + subtyp
+function migrateBodyweightToStrength(){
+  let changed=false;
+  exercises.forEach(ex=>{
+    if(ex.primaryForm==='bodyweight'){
+      ex.primaryForm='strength';
+      ex.useBodyweight=true;
+      ex.subTags=ex.subTags||[];
+      if(!ex.subTags.includes('Egen vikt')) ex.subTags.push('Egen vikt');
+      changed=true;
+    }
+  });
+  if(changed) saveState();
+}
+
+// "Rörlighet" är borttaget som område → mappa gamla rörlighetsövningar till "Kroppskontroll"
+function migrateMobilityAreas(){
+  let changed=false;
+  exercises.forEach(ex=>{
+    if(getPrimaryForm(ex)==='mobility'&&ex.muscle==='Rörlighet'){ ex.muscle='Kroppskontroll'; changed=true; }
+  });
   if(changed) saveState();
 }
 
@@ -4383,10 +4446,12 @@ function openAddFormFromNewPass(){
 function addForm(){
   const name=document.getElementById('nf-name').value.trim();
   const icon=document.getElementById('nf-icon').value.trim()||'💪';
-  const cat=document.getElementById('nf-cat').value;
+  // nf-cat = basbeteende (= primaryForm). Härled cat för färggradient.
+  const primaryForm=document.getElementById('nf-cat').value||'strength';
+  const cat={strength:'strength',running:'cardio',cycling:'cardio',mobility:'mobility',other:'strength'}[primaryForm]||'strength';
   if(!name) return;
   const newId=crypto.randomUUID();
-  trainingForms.push({id:newId,name,icon,cat,passTypes:[]});
+  trainingForms.push({id:newId,name,icon,cat,primaryForm,passTypes:[]});
   closeModal('m-add-form');
   saveState();
   renderPassList();
@@ -4714,7 +4779,7 @@ function addExToPlan(){
 }
 
 /* ========== EXERCISE BANK UI ========== */
-let exFilter={muscle:'',form:'',q:''};
+let exFilter={muscle:'',form:'',q:'',bodyweight:false};
 let editingExId=null;
 
 function renderExMuscleChips(){
@@ -4727,11 +4792,13 @@ function renderExFormChips(){
   const c=document.getElementById('ex-form-chips');
   if(!c) return;
   c.innerHTML=`<button class="filter-chip ${!exFilter.form?'active':''}" onclick="setExForm('')">Alla</button>`+
-    PRIMARY_FORMS.map(f=>`<button class="filter-chip ${exFilter.form===f.id?'active':''}" onclick="setExForm('${f.id}')">${f.icon} ${f.label}</button>`).join('');
+    PICKABLE_FORMS.map(f=>`<button class="filter-chip ${exFilter.form===f.id?'active':''}" onclick="setExForm('${f.id}')">${f.icon} ${f.label}</button>`).join('')+
+    `<button class="filter-chip ${exFilter.bodyweight?'active':''}" onclick="toggleExBodyweightFilter()" style="${exFilter.bodyweight?'':''}">🤸 Egen vikt</button>`;
 }
 function setExMuscle(m){exFilter.muscle=m;renderExercises();}
 function setExForm(f){exFilter.form=f;renderExercises();}
-function clearExFilters(){exFilter={muscle:'',form:'',q:''};const s=document.getElementById('ex-search');if(s) s.value='';renderExercises();}
+function toggleExBodyweightFilter(){exFilter.bodyweight=!exFilter.bodyweight;renderExercises();}
+function clearExFilters(){exFilter={muscle:'',form:'',q:'',bodyweight:false};const s=document.getElementById('ex-search');if(s) s.value='';renderExercises();}
 
 function exUsageCount(exId){
   let n=0;
@@ -4747,6 +4814,7 @@ function renderExercises(){
   const fil=exercises.filter(ex=>{
     if(exFilter.muscle&&ex.muscle!==exFilter.muscle) return false;
     if(exFilter.form&&getPrimaryForm(ex)!==exFilter.form) return false;
+    if(exFilter.bodyweight&&!ex.useBodyweight) return false;
     if(q){
       const hay=(ex.name+' '+(ex.muscle||'')+' '+(ex.subTags||[]).join(' ')+' '+(ex.customTags||[]).join(' ')).toLowerCase();
       if(!hay.includes(q)) return false;
@@ -4876,6 +4944,16 @@ function toggleBodyweightField(){
     w.style.opacity='1';
     w.placeholder='–';
   }
+  // Spegla "Egen vikt"-subtyp-chipen (kryssrutan är källan)
+  const chip=document.querySelector('#ex-f-strength-tags .filter-chip[data-tag="Egen vikt"]');
+  if(chip) chip.classList.toggle('active',cb.checked);
+}
+
+// "Egen vikt"-subtyp-chip: klick togglar kryssrutan (de är samma sak)
+function toggleEgenVikt(btn){
+  const cb=document.getElementById('ex-f-bodyweight');
+  if(cb){ cb.checked=!cb.checked; toggleBodyweightField(); }
+  else btn.classList.toggle('active');
 }
 
 function openExerciseDetail(exId){
@@ -5500,7 +5578,7 @@ function startPassFromSo(formId,passId){
 function renderSoSpontanForms(){
   const el=document.getElementById('so-spontan-forms');
   if(!el) return;
-  el.innerHTML=PRIMARY_FORMS.map(f=>`
+  el.innerHTML=PICKABLE_FORMS.map(f=>`
     <button class="card" onclick="startSpontanPass('${f.id}')" style="display:flex;align-items:center;gap:12px;padding:13px;cursor:pointer;text-align:left;border:0.5px solid var(--border);background:var(--surface);font-family:inherit;color:var(--text-1);width:100%">
       <div style="width:38px;height:38px;border-radius:10px;background:${f.color};color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${f.icon}</div>
       <div style="flex:1;font-size:14px;font-weight:700">${f.label}</div>
@@ -6492,15 +6570,18 @@ function bar(id,data,color,tc,gc){
 
 /* ========== INIT ========== */
 function populateExModal(){
-  // Muskel-dropdowns (alla varianter)
-  ['ex-f-muscle','ex-f-bw-muscle','ex-f-m-area','ne-cat'].forEach(id=>{
+  // Muskel-dropdowns (styrka + bodyweight-rest) använder MUSCLE_TAGS
+  ['ex-f-muscle','ex-f-bw-muscle','ne-cat'].forEach(id=>{
     const el=document.getElementById(id);
     if(el&&!el.options.length) el.innerHTML=MUSCLE_TAGS.map(m=>`<option>${m}</option>`).join('');
   });
-  // Primär träningsform-chips
+  // Rörlighet/Yoga-område använder MOBILITY_AREAS (egen lista — utan "Rörlighet")
+  const ma=document.getElementById('ex-f-m-area');
+  if(ma&&!ma.options.length) ma.innerHTML=MOBILITY_AREAS.map(m=>`<option>${m}</option>`).join('');
+  // Träningsform-chips — bara valbara typer (ej Egen vikt / Övrigt)
   const pf=document.getElementById('ex-f-primary');
   if(pf&&!pf.children.length){
-    pf.innerHTML=PRIMARY_FORMS.map(f=>`<button class="filter-chip" data-form="${f.id}" onclick="setExPrimary('${f.id}')">${f.icon} ${f.label}</button>`).join('');
+    pf.innerHTML=PICKABLE_FORMS.map(f=>`<button class="filter-chip" data-form="${f.id}" onclick="setExPrimary('${f.id}')">${f.icon} ${f.label}</button>`).join('');
   }
   // Pulszon-options
   const pz=document.getElementById('ex-f-pulse');
@@ -6512,15 +6593,22 @@ function populateExModal(){
       pz.appendChild(opt);
     });
   }
-  // Strength sub-taggar (statiska)
+  // Strength sub-taggar (statiska). "Egen vikt" först — speglar kryssrutan (en toggle).
   const st=document.getElementById('ex-f-strength-tags');
   if(st&&!st.children.length){
     const stags=['Gym','Dynamisk styrka','Explosivitet','Powerlifting','Maxstyrka','Hypertrofi'];
-    st.innerHTML=stags.map(t=>`<button class="filter-chip" data-tag="${t}" onclick="toggleExFormTag(this)">${t}</button>`).join('');
+    st.innerHTML=`<button class="filter-chip" data-tag="Egen vikt" onclick="toggleEgenVikt(this)">🤸 Egen vikt</button>`
+      +stags.map(t=>`<button class="filter-chip" data-tag="${t}" onclick="toggleExFormTag(this)">${t}</button>`).join('');
   }
 }
 
 function setExPrimary(formId){
+  // Egen vikt är inte längre en egen typ → behandla som Styrketräning med kryssrutan ibockad
+  if(formId==='bodyweight'){
+    formId='strength';
+    const cb=document.getElementById('ex-f-bodyweight');
+    if(cb) cb.checked=true;
+  }
   // Aktivera vald form-chip
   document.querySelectorAll('#ex-f-primary .filter-chip').forEach(c=>{
     c.classList.toggle('active',c.getAttribute('data-form')===formId);
@@ -6556,6 +6644,9 @@ loadState();
 migrateNestedToBank();
 migrateExercisesToPrimaryForm();
 migrateMergeStrengthForms();
+migrateBodyweightToStrength();
+migrateMobilityAreas();
+ensureDefaultForms();
 migrateGoalsAddIds();
 saveState();
 populateExModal();
