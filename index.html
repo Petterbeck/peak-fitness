@@ -534,21 +534,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <!-- COACH -->
 <div class="page" id="page-coach">
-  <div class="page-title">AI-coach</div>
-  <div class="coach-bubble">
-    <div class="coach-av"><i class="ti ti-sparkles"></i></div>
-    <div class="coach-c"><div class="coach-n">Coach</div><div class="coach-m">Hej! Vad vill du jobba med idag?</div></div>
+  <div class="page-title" style="display:flex;align-items:center;justify-content:space-between">
+    <span>AI-coach</span>
+    <button class="btn-sm" onclick="clearCoachChat()" style="background:var(--surface-2);color:var(--text-2);font-size:11px" title="Rensa konversationen"><i class="ti ti-eraser"></i> Rensa</button>
   </div>
-  <div style="display:flex;flex-direction:column;gap:7px">
-    <button class="coach-chip" style="text-align:left;padding:13px;font-size:13px;display:flex;align-items:center;gap:9px"><i class="ti ti-calendar" style="font-size:15px;color:var(--accent-4)"></i>Skapa 4-veckors schema</button>
-    <button class="coach-chip" style="text-align:left;padding:13px;font-size:13px;display:flex;align-items:center;gap:9px"><i class="ti ti-chart-line" style="font-size:15px;color:var(--accent-4)"></i>Analysera min progress</button>
-    <button class="coach-chip" style="text-align:left;padding:13px;font-size:13px;display:flex;align-items:center;gap:9px"><i class="ti ti-bolt" style="font-size:15px;color:var(--accent-4)"></i>Snabbpass för idag</button>
-    <button class="coach-chip" style="text-align:left;padding:13px;font-size:13px;display:flex;align-items:center;gap:9px"><i class="ti ti-barbell" style="font-size:15px;color:var(--accent-4)"></i>Lägg till ny övning i övningsbanken</button>
-    <button class="coach-chip" style="text-align:left;padding:13px;font-size:13px;display:flex;align-items:center;gap:9px"><i class="ti ti-run" style="font-size:15px;color:var(--accent-4)"></i>Löpplan för 5K-mål</button>
-  </div>
-  <div class="notice">💡 Tipsa coachen om övningar: t.ex. "lägg in rumänsk marklyft under Styrka B, ben" – så lägger den in den åt dig.</div>
-  <div class="section-title" style="padding:0 2px;margin-top:4px">Fråga fritt</div>
-  <div class="coach-input-row"><input class="coach-input" id="coach-text" placeholder="Fråga din coach..."><button class="coach-send"><i class="ti ti-arrow-up"></i></button></div>
+  <div id="coach-messages" style="display:flex;flex-direction:column;gap:10px"></div>
+  <div class="coach-input-row"><input class="coach-input" id="coach-text" placeholder="Fråga din coach..." onkeydown="if(event.key==='Enter'){event.preventDefault();coachSend();}"><button class="coach-send" id="coach-send-btn" onclick="coachSend()"><i class="ti ti-arrow-up"></i></button></div>
 </div>
 
 <!-- MIN TRÄNINGSLOGG -->
@@ -4299,6 +4290,7 @@ function navigate(id){
   if(id==='page-plan'){renderWeekSchedule();renderCalendar();}
   if(id==='page-log') renderLogPassList();
   if(id==='page-history') renderHistory();
+  if(id==='page-coach') renderCoach();
   if(id==='page-profile'){renderProfileInfo();renderLastSync();renderGoals();}
   window.scrollTo(0,0);
 }
@@ -5542,6 +5534,172 @@ function showToast(html,ms){
   t._timer=setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(-50%)';},ms||3500);
 }
 
+/* ========== AI-COACH CHAT (Etapp 4.2) ========== */
+let coachMessages=[]; // {role:'user'|'assistant', content, exercises?:[{...,added?}]}
+let coachThinking=false;
+const COACH_CHAT_KEY='peak_coach_chat';
+const COACH_STARTERS=[
+  {icon:'ti-chart-line',label:'Analysera min progress',prompt:'Analysera min träning den senaste tiden och min Peak Score. Vad gör jag bra och vad bör jag fokusera på?'},
+  {icon:'ti-barbell',label:'Föreslå övningar',prompt:'Föreslå 3 övningar som kompletterar min nuvarande träning bra.'},
+  {icon:'ti-bolt',label:'Snabbpass för idag',prompt:'Ge mig ett kort effektivt pass jag kan göra idag (ca 30 min).'},
+  {icon:'ti-run',label:'Tips för mina mål',prompt:'Utifrån mina mål — vad ska jag prioritera den närmaste veckan?'}
+];
+
+function loadCoachChat(){
+  try{ const raw=localStorage.getItem(COACH_CHAT_KEY); if(raw) coachMessages=JSON.parse(raw)||[]; }catch(e){ coachMessages=[]; }
+}
+function saveCoachChat(){
+  try{ localStorage.setItem(COACH_CHAT_KEY,JSON.stringify(coachMessages.slice(-40))); }catch(e){}
+}
+function clearCoachChat(){
+  if(coachMessages.length&&!confirm('Rensa hela konversationen med coachen?')) return;
+  coachMessages=[]; saveCoachChat(); renderCoach();
+}
+
+function renderCoach(){
+  const el=document.getElementById('coach-messages');
+  if(!el) return;
+  if(!coachMessages.length&&!coachThinking){
+    el.innerHTML=`
+      <div class="coach-bubble"><div class="coach-av"><i class="ti ti-sparkles"></i></div><div class="coach-c"><div class="coach-n">Coach</div><div class="coach-m">Hej ${escapeHtml(userProfile.name||'')}! Vad vill du jobba med idag? 💪</div></div></div>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-top:4px">
+        ${COACH_STARTERS.map((s,i)=>`<button class="coach-chip" style="text-align:left;padding:13px;font-size:13px;display:flex;align-items:center;gap:9px" onclick="coachStarter(${i})"><i class="ti ${s.icon}" style="font-size:15px;color:var(--accent-4)"></i>${escapeHtml(s.label)}</button>`).join('')}
+      </div>`;
+    return;
+  }
+  let html=coachMessages.map((m,i)=>coachMsgHtml(m,i)).join('');
+  if(coachThinking){
+    html+=`<div class="coach-bubble"><div class="coach-av"><i class="ti ti-sparkles"></i></div><div class="coach-c"><div class="coach-m" style="color:var(--text-3)"><i class="ti ti-loader-2"></i> Coachen tänker…</div></div></div>`;
+  }
+  el.innerHTML=html;
+  // Scrolla senaste meddelandet i vy (messages är inte egen scroll-container, så hela sidan scrollar)
+  const last=el.lastElementChild;
+  if(last) requestAnimationFrame(()=>last.scrollIntoView({behavior:'smooth',block:'nearest'}));
+}
+
+function coachMsgHtml(m,i){
+  if(m.role==='user'){
+    return `<div style="align-self:flex-end;max-width:85%;background:var(--accent);color:#fff;padding:10px 13px;border-radius:14px 14px 4px 14px;font-size:13px;line-height:1.5">${escapeHtml(m.content).replace(/\n/g,'<br>')}</div>`;
+  }
+  // assistant
+  let body=`<div class="coach-bubble"><div class="coach-av"><i class="ti ti-sparkles"></i></div><div class="coach-c"><div class="coach-n">Coach</div><div class="coach-m">${escapeHtml(m.content).replace(/\n/g,'<br>')}</div></div></div>`;
+  if(m.exercises&&m.exercises.length){
+    body+=`<div style="display:flex;flex-direction:column;gap:6px;margin:2px 0 2px 42px">`+
+      m.exercises.map((ex,j)=>{
+        const sub=[ex.muscle,ex.useBodyweight?'egen vikt':null,(ex.defaultSets&&ex.defaultReps)?`${ex.defaultSets}×${ex.defaultReps}`:null].filter(Boolean).join(' · ');
+        return `<div class="card" style="padding:10px 12px;display:flex;align-items:center;gap:10px">
+          <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700">${escapeHtml(ex.name||'')}</div>${sub?`<div style="font-size:11px;color:var(--text-3)">${escapeHtml(sub)}</div>`:''}</div>
+          <button class="btn-sm ${ex.added?'':'btn-acc'}" ${ex.added?'disabled':''} onclick="coachAddExercise(${i},${j},this)" style="flex-shrink:0;${ex.added?'background:var(--surface-2);color:var(--accent-3)':''}">${ex.added?'<i class="ti ti-check"></i> Tillagd':'<i class="ti ti-plus"></i> Lägg till'}</button>
+        </div>`;
+      }).join('')+`</div>`;
+  }
+  return body;
+}
+
+function coachStarter(i){ const s=COACH_STARTERS[i]; if(s) coachSend(s.prompt); }
+
+async function coachSend(presetText){
+  const input=document.getElementById('coach-text');
+  const text=(presetText!=null?presetText:(input?input.value:'')).trim();
+  if(!text||coachThinking) return;
+  if(input) input.value='';
+  coachMessages.push({role:'user',content:text});
+  coachThinking=true;
+  saveCoachChat();
+  renderCoach();
+  try{
+    // Skicka konversationen (utan våra extra fält) till Claude
+    const msgs=coachMessages.map(m=>({role:m.role,content:m.content}));
+    const result=await callClaude(msgs,{system:coachSystemPrompt(),max_tokens:1500});
+    const {prose,exercises}=parseCoachReply(result.text||'');
+    coachThinking=false;
+    coachMessages.push({role:'assistant',content:prose||'(tomt svar)',exercises});
+    saveCoachChat();
+    renderCoach();
+  }catch(e){
+    console.error('Coach-fel:',e);
+    coachThinking=false;
+    coachMessages.push({role:'assistant',content:'⚠️ Kunde inte nå coachen just nu ('+(e.message||'fel')+'). Försök igen om en stund.'});
+    saveCoachChat();
+    renderCoach();
+  }
+}
+
+// Bygg en kompakt, personlig system-prompt med användarens data
+function coachSystemPrompt(){
+  const age=userProfile.birthDate?calcAge(userProfile.birthDate):userProfile.age;
+  const levelMap={beginner:'nybörjare',intermediate:'mellannivå',advanced:'avancerad'};
+  const score=calcPeakScore(),tier=peakTier(score);
+  const goals=(userGoals||[]).map(g=>`${g.name}${g.progress?` (${g.progress}%)`:''}`).join(', ')||'inga satta';
+  const forms=(trainingForms||[]).map(f=>f.name).join(', ');
+  const exNames=(exercises||[]).map(e=>e.name).slice(0,120).join(', ');
+  const recent=(workoutHistory||[]).slice(-10).reverse().map(w=>{
+    const d=w.date?new Date(w.date).toLocaleDateString('sv-SE'):'?';
+    return `${d}: ${w.passName||'Pass'}${w.feel?` (känsla ${w.feel}/5)`:''}`;
+  }).join('; ')||'inga loggade pass än';
+  return `Du är en personlig, uppmuntrande AI-träningscoach i appen Peak Fitness. Svara ALLTID på svenska, koncist och konkret. Använd emojis sparsamt.
+
+ANVÄNDARENS PROFIL:
+- Namn: ${userProfile.name||'okänt'}${age?`, ${age} år`:''}${userProfile.weightKg?`, ${userProfile.weightKg} kg`:''}${userProfile.heightCm?`, ${userProfile.heightCm} cm`:''}
+- Nivå: ${levelMap[userProfile.level||'beginner']}
+- Peak Score (senaste 7 dagarna): ${score} (${tier.label})
+- Mål: ${goals}
+- Träningsformer: ${forms}
+- Senaste pass: ${recent}
+- Övningar som REDAN finns i banken: ${exNames||'(tom)'}
+
+RIKTLINJER:
+- Var personlig och referera till användarens faktiska data när det är relevant.
+- Föreslå INTE övningar som redan finns i banken (listan ovan).
+- När du föreslår KONKRETA NYA övningar som användaren kan lägga till i sin bank: avsluta
+  ditt svar med EXAKT ett block i detta format (inget annat efter):
+  <ÖVNINGAR>[{"name":"Svenskt namn","primaryForm":"strength|running|cycling|mobility|group","muscle":"Bröst|Rygg|Ben|Axlar|Armar|Bål|Höft|Ryggrad|Kondition|Explosivitet|Rörlighet","useBodyweight":false,"defaultSets":3,"defaultReps":10,"note":"kort tips"}]</ÖVNINGAR>
+  Endast giltig JSON i blocket, dubbla citattecken, inga trailing commas. Utelämna blocket
+  helt om du inte föreslår nya övningar. Egenvikt-övningar: primaryForm=strength + useBodyweight=true.`;
+}
+
+// Plocka ut ev. övningsförslag ur svaret och strippa blocket ur prosan
+function parseCoachReply(text){
+  const m=text.match(/<ÖVNINGAR>([\s\S]*?)<\/ÖVNINGAR>/i);
+  let exercises=[];
+  if(m){
+    let json=m[1].trim().replace(/[“”„‟]/g,'"').replace(/,(\s*[}\]])/g,'$1');
+    const first=json.indexOf('['),last=json.lastIndexOf(']');
+    if(first>=0&&last>first) json=json.slice(first,last+1);
+    try{
+      const arr=JSON.parse(json);
+      if(Array.isArray(arr)) exercises=arr.filter(x=>x&&x.name).map(x=>({...x,added:false}));
+    }catch(e){ console.warn('Kunde inte tolka coach-övningar:',e.message); }
+  }
+  const prose=text.replace(/<ÖVNINGAR>[\s\S]*?<\/ÖVNINGAR>/i,'').trim();
+  return {prose,exercises};
+}
+
+// Lägg till en av coachens föreslagna övningar i banken
+function coachAddExercise(msgIdx,exIdx,btn){
+  const m=coachMessages[msgIdx]; if(!m||!m.exercises) return;
+  const exData=m.exercises[exIdx]; if(!exData||exData.added) return;
+  const pf=exData.primaryForm==='bodyweight'?'strength':(exData.primaryForm||'strength');
+  const isBw=!!exData.useBodyweight;
+  const sub=isBw?['Egen vikt']:[];
+  const {ex,isNew}=ensureSharedExercise({
+    name:exData.name,
+    primaryForm:pf,
+    muscle:exData.muscle||(pf==='running'||pf==='cycling'?'Kondition':'Bål'),
+    useBodyweight:isBw,
+    defaultSets:exData.defaultSets||3,
+    defaultReps:exData.defaultReps||10,
+    subTags:sub,
+    note:exData.note||''
+  });
+  exData.added=true;
+  saveCoachChat();
+  saveState();
+  renderExercises();
+  renderCoach();
+  showToast(isNew?`✓ "${escapeHtml(ex.name)}" tillagd i banken`:`"${escapeHtml(ex.name)}" fanns redan i banken`);
+}
+
 /* ========== HOME HERO ========== */
 function renderHomeHero(){
   const el=document.getElementById('home-hero-content');
@@ -6737,6 +6895,7 @@ function getCurrentPrimaryForm(){
 }
 
 loadState();
+loadCoachChat();
 migrateNestedToBank();
 migrateExercisesToPrimaryForm();
 migrateMergeStrengthForms();
