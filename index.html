@@ -539,7 +539,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button class="btn-sm" onclick="clearCoachChat()" style="background:var(--surface-2);color:var(--text-2);font-size:11px" title="Rensa konversationen"><i class="ti ti-eraser"></i> Rensa</button>
   </div>
   <div id="coach-messages" style="display:flex;flex-direction:column;gap:10px"></div>
-  <div class="coach-input-row"><input class="coach-input" id="coach-text" placeholder="Fråga din coach..." onkeydown="if(event.key==='Enter'){event.preventDefault();coachSend();}"><button class="coach-send" id="coach-send-btn" onclick="coachSend()"><i class="ti ti-arrow-up"></i></button></div>
+  <div class="coach-input-row"><button class="coach-send" id="coach-mic-btn" onclick="toggleCoachMic()" title="Spela in röst" style="background:var(--surface-2);color:var(--text-1)"><i class="ti ti-microphone"></i></button><input class="coach-input" id="coach-text" placeholder="Fråga din coach..." onkeydown="if(event.key==='Enter'){event.preventDefault();coachSend();}"><button class="coach-send" id="coach-send-btn" onclick="coachSend()"><i class="ti ti-arrow-up"></i></button></div>
 </div>
 
 <!-- MIN TRÄNINGSLOGG -->
@@ -5559,6 +5559,8 @@ function clearCoachChat(){
 function renderCoach(){
   const el=document.getElementById('coach-messages');
   if(!el) return;
+  const mic=document.getElementById('coach-mic-btn');
+  if(mic) mic.style.display=coachMicSupported()?'':'none';
   if(!coachMessages.length&&!coachThinking){
     el.innerHTML=`
       <div class="coach-bubble"><div class="coach-av"><i class="ti ti-sparkles"></i></div><div class="coach-c"><div class="coach-n">Coach</div><div class="coach-m">Hej ${escapeHtml(userProfile.name||'')}! Vad vill du jobba med idag? 💪</div></div></div>
@@ -5593,6 +5595,19 @@ function coachMsgHtml(m,i){
         </div>`;
       }).join('')+`</div>`;
   }
+  if(m.pass){
+    const p=m.pass;
+    const exList=(p.exercises||[]).map(e=>{
+      const sr=(e.sets&&e.reps)?` · ${e.sets}×${e.reps}`:'';
+      return `<div style="font-size:11px;color:var(--text-2);padding:1px 0">• ${escapeHtml(e.name||'')}${e.useBodyweight?' (egen vikt)':''}${sr}</div>`;
+    }).join('');
+    const pfInfo=PRIMARY_FORM_BY_ID[(p.primaryForm==='bodyweight'?'strength':p.primaryForm)]||PRIMARY_FORM_BY_ID.strength;
+    body+=`<div class="card" style="padding:12px;margin:2px 0 2px 42px;border:1px solid var(--accent-3)">
+      <div style="font-size:13px;font-weight:800;display:flex;align-items:center;gap:6px">${pfInfo.icon} ${escapeHtml(p.name||'Pass')}</div>
+      <div style="margin:6px 0 10px">${exList||'<span style="font-size:11px;color:var(--text-3)">(inga övningar)</span>'}</div>
+      <button class="btn-sm ${p.added?'':'btn-acc'}" onclick="${p.added?`startPlannedPass('${p.passId}')`:`coachScheduleToday(${i},this)`}" style="width:100%;${p.added?'background:var(--accent-3);color:#fff':''}">${p.added?'<i class="ti ti-player-play-filled"></i> Starta nu':'<i class="ti ti-calendar-plus"></i> Lägg till i dagens schema'}</button>
+    </div>`;
+  }
   return body;
 }
 
@@ -5611,9 +5626,9 @@ async function coachSend(presetText){
     // Skicka konversationen (utan våra extra fält) till Claude
     const msgs=coachMessages.map(m=>({role:m.role,content:m.content}));
     const result=await callClaude(msgs,{system:coachSystemPrompt(),max_tokens:1500});
-    const {prose,exercises}=parseCoachReply(result.text||'');
+    const {prose,exercises,pass}=parseCoachReply(result.text||'');
     coachThinking=false;
-    coachMessages.push({role:'assistant',content:prose||'(tomt svar)',exercises});
+    coachMessages.push({role:'assistant',content:prose||'(tomt svar)',exercises,pass});
     saveCoachChat();
     renderCoach();
   }catch(e){
@@ -5655,24 +5670,40 @@ RIKTLINJER:
   ditt svar med EXAKT ett block i detta format (inget annat efter):
   <ÖVNINGAR>[{"name":"Svenskt namn","primaryForm":"strength|running|cycling|mobility|group","muscle":"Bröst|Rygg|Ben|Axlar|Armar|Bål|Höft|Ryggrad|Kondition|Explosivitet|Rörlighet","useBodyweight":false,"defaultSets":3,"defaultReps":10,"note":"kort tips"}]</ÖVNINGAR>
   Endast giltig JSON i blocket, dubbla citattecken, inga trailing commas. Utelämna blocket
-  helt om du inte föreslår nya övningar. Egenvikt-övningar: primaryForm=strength + useBodyweight=true.`;
+  helt om du inte föreslår nya övningar. Egenvikt-övningar: primaryForm=strength + useBodyweight=true.
+- När du föreslår ett KOMPLETT PASS som användaren kan göra (t.ex. "ge mig ett benpass för
+  idag"): avsluta svaret med EXAKT ett block i detta format:
+  <PASS>{"name":"Passnamn","primaryForm":"strength|running|cycling|mobility|group","exercises":[{"name":"Svenskt namn","muscle":"Ben|Rygg|...","useBodyweight":false,"sets":4,"reps":8}]}</PASS>
+  Då får användaren en knapp för att lägga passet i dagens schema. Endast giltig JSON. Använd
+  detta block för hela pass; <ÖVNINGAR> bara när du föreslår lösa övningar till banken. Du kan
+  ha med båda blocken om det passar (först eventuell <ÖVNINGAR>, sedan <PASS>).`;
 }
 
-// Plocka ut ev. övningsförslag ur svaret och strippa blocket ur prosan
+// Plocka ut ev. övningsförslag + pass-förslag ur svaret och strippa blocken ur prosan
 function parseCoachReply(text){
-  const m=text.match(/<ÖVNINGAR>([\s\S]*?)<\/ÖVNINGAR>/i);
+  const clean=s=>s.trim().replace(/[“”„‟]/g,'"').replace(/,(\s*[}\]])/g,'$1');
+  // <ÖVNINGAR> = array av lösa övningar
   let exercises=[];
-  if(m){
-    let json=m[1].trim().replace(/[“”„‟]/g,'"').replace(/,(\s*[}\]])/g,'$1');
-    const first=json.indexOf('['),last=json.lastIndexOf(']');
-    if(first>=0&&last>first) json=json.slice(first,last+1);
-    try{
-      const arr=JSON.parse(json);
-      if(Array.isArray(arr)) exercises=arr.filter(x=>x&&x.name).map(x=>({...x,added:false}));
-    }catch(e){ console.warn('Kunde inte tolka coach-övningar:',e.message); }
+  const em=text.match(/<ÖVNINGAR>([\s\S]*?)<\/ÖVNINGAR>/i);
+  if(em){
+    let json=clean(em[1]);
+    const a=json.indexOf('['),b=json.lastIndexOf(']');
+    if(a>=0&&b>a) json=json.slice(a,b+1);
+    try{ const arr=JSON.parse(json); if(Array.isArray(arr)) exercises=arr.filter(x=>x&&x.name).map(x=>({...x,added:false})); }
+    catch(e){ console.warn('Kunde inte tolka coach-övningar:',e.message); }
   }
-  const prose=text.replace(/<ÖVNINGAR>[\s\S]*?<\/ÖVNINGAR>/i,'').trim();
-  return {prose,exercises};
+  // <PASS> = ett komplett pass (objekt)
+  let pass=null;
+  const pm=text.match(/<PASS>([\s\S]*?)<\/PASS>/i);
+  if(pm){
+    let json=clean(pm[1]);
+    const a=json.indexOf('{'),b=json.lastIndexOf('}');
+    if(a>=0&&b>a) json=json.slice(a,b+1);
+    try{ const o=JSON.parse(json); if(o&&o.name&&Array.isArray(o.exercises)) pass={...o,added:false}; }
+    catch(e){ console.warn('Kunde inte tolka coach-pass:',e.message); }
+  }
+  const prose=text.replace(/<ÖVNINGAR>[\s\S]*?<\/ÖVNINGAR>/i,'').replace(/<PASS>[\s\S]*?<\/PASS>/i,'').trim();
+  return {prose,exercises,pass};
 }
 
 // Lägg till en av coachens föreslagna övningar i banken
@@ -5698,6 +5729,120 @@ function coachAddExercise(msgIdx,exIdx,btn){
   renderExercises();
   renderCoach();
   showToast(isNew?`✓ "${escapeHtml(ex.name)}" tillagd i banken`:`"${escapeHtml(ex.name)}" fanns redan i banken`);
+}
+
+// Hitta träningsform för en primaryForm, annars skapa en
+function coachResolveForm(pf){
+  pf=pf==='bodyweight'?'strength':(pf||'strength');
+  let form=trainingForms.find(f=>f.primaryForm===pf);
+  if(form) return form;
+  const info=PRIMARY_FORM_BY_ID[pf]||PRIMARY_FORM_BY_ID.strength;
+  const cat={strength:'strength',running:'cardio',cycling:'cardio',mobility:'mobility',group:'strength',other:'strength'}[pf]||'strength';
+  form={id:crypto.randomUUID(),name:info.label,icon:info.icon,cat,primaryForm:pf,passTypes:[]};
+  trainingForms.push(form);
+  return form;
+}
+
+// Skapa coachens föreslagna pass + schemalägg det idag
+function coachScheduleToday(msgIdx,btn){
+  const m=coachMessages[msgIdx]; if(!m||!m.pass||m.pass.added) return;
+  const p=m.pass;
+  const form=coachResolveForm(p.primaryForm);
+  const pf=form.primaryForm;
+  const exerciseRefs=[];
+  (p.exercises||[]).forEach(exData=>{
+    const isBw=!!exData.useBodyweight;
+    const {ex}=ensureSharedExercise({
+      name:exData.name,
+      primaryForm:pf,
+      muscle:exData.muscle||(pf==='running'||pf==='cycling'?'Kondition':'Bål'),
+      useBodyweight:isBw,
+      defaultSets:exData.sets||3,
+      defaultReps:exData.reps||10,
+      subTags:isBw?['Egen vikt']:[]
+    });
+    exerciseRefs.push({exId:ex.id,sets:exData.sets||ex.defaultSets,reps:exData.reps||ex.defaultReps});
+  });
+  const passId=crypto.randomUUID();
+  form.passTypes.push({id:passId,name:p.name||'Coach-pass',desc:'Föreslaget av AI-coachen',color:(PRIMARY_FORM_BY_ID[pf]||{}).color||'#5b52f0',formTags:[],customTags:['Coach'],exerciseRefs});
+  plannedWorkouts.push({id:crypto.randomUUID(),date:todayIso(),passId,formId:form.id,notes:'Föreslaget av coachen'});
+  p.added=true; p.passId=passId;
+  saveCoachChat();
+  saveState();
+  renderHomeHero();renderPassList();renderCalendar();renderExercises();
+  renderCoach();
+  showToast(`✓ "${escapeHtml(p.name||'Pass')}" tillagt i dagens schema`);
+}
+
+/* ---- Röstinmatning (Whisper via /api/transcribe) ---- */
+let coachRec=null,coachChunks=[],coachRecTimer=null;
+function coachMicSupported(){ return !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder); }
+function setCoachMicState(on){
+  const btn=document.getElementById('coach-mic-btn'); const inp=document.getElementById('coach-text');
+  if(btn){
+    btn.innerHTML=on?'<i class="ti ti-player-stop-filled"></i>':'<i class="ti ti-microphone"></i>';
+    btn.style.background=on?'#e8200a':'var(--surface-2)';
+    btn.style.color=on?'#fff':'var(--text-1)';
+    btn.title=on?'Spelar in… tryck för att stoppa':'Spela in röst';
+  }
+  if(inp&&on) inp.placeholder='🎙️ Lyssnar… tryck stopp när du är klar';
+}
+async function toggleCoachMic(){
+  if(coachRec&&coachRec.state==='recording'){ if(coachRec.state==='recording') coachRec.stop(); return; }
+  if(!coachMicSupported()){ showToast('Röstinspelning stöds inte i denna webbläsare'); return; }
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    coachChunks=[];
+    let mime='';
+    if(window.MediaRecorder.isTypeSupported){
+      if(MediaRecorder.isTypeSupported('audio/webm')) mime='audio/webm';
+      else if(MediaRecorder.isTypeSupported('audio/mp4')) mime='audio/mp4';
+    }
+    coachRec=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
+    coachRec.ondataavailable=e=>{ if(e.data&&e.data.size) coachChunks.push(e.data); };
+    coachRec.onstop=async ()=>{
+      stream.getTracks().forEach(t=>t.stop());
+      clearTimeout(coachRecTimer);
+      setCoachMicState(false);
+      const blob=new Blob(coachChunks,{type:coachRec.mimeType||mime||'audio/webm'});
+      if(blob.size) await transcribeCoachAudio(blob);
+    };
+    coachRec.start();
+    setCoachMicState(true);
+    coachRecTimer=setTimeout(()=>{ if(coachRec&&coachRec.state==='recording') coachRec.stop(); },60000); // auto-stopp 60s
+  }catch(e){
+    console.warn('Mic-fel:',e);
+    setCoachMicState(false);
+    showToast(e.name==='NotAllowedError'?'Mikrofon nekades — tillåt i webbläsaren':'Kunde inte starta mikrofonen');
+  }
+}
+async function transcribeCoachAudio(blob){
+  const inp=document.getElementById('coach-text');
+  if(inp) inp.placeholder='⏳ Transkriberar…';
+  try{
+    if(!supa||!currentUser) throw new Error('Inte inloggad');
+    const {data:{session}}=await supa.auth.getSession();
+    if(!session) throw new Error('Ingen session');
+    const base64=await fileToBase64(blob);
+    const res=await fetch('/api/transcribe',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},
+      body:JSON.stringify({audio:base64,mime:blob.type||'audio/webm'})
+    });
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error||('HTTP '+res.status));
+    const text=(data.text||'').trim();
+    if(inp){
+      inp.value=(inp.value?inp.value.trim()+' ':'')+text;
+      inp.placeholder='Fråga din coach...';
+      inp.focus();
+    }
+    if(!text) showToast('Hörde inget — försök igen');
+  }catch(e){
+    console.error('Transkribering-fel:',e);
+    if(inp) inp.placeholder='Fråga din coach...';
+    showToast('Transkribering misslyckades: '+(e.message||'fel'));
+  }
 }
 
 /* ========== HOME HERO ========== */
