@@ -3564,11 +3564,20 @@ async function deleteCloudOrphans(table,localIds,uid){
     if(error){console.warn('Orphan-koll misslyckades för',table,error.message);return;}
     const localSet=new Set(localIds);
     const toDelete=(cloudRows||[]).filter(r=>!localSet.has(r.id)).map(r=>r.id);
-    if(toDelete.length){
-      const {error:delErr}=await supa.from(table).delete().in('id',toDelete);
-      if(delErr) console.warn('Orphan-radering misslyckades för',table,delErr.message);
-      else console.log(`Sync: raderade ${toDelete.length} borttagna rader från ${table}`);
+    if(!toDelete.length) return;
+    // SÄKERHETSTRÖSKEL mot multi-flik/multi-enhet race: om en annan instans har gammalt
+    // state och syncar, kommer ALLA "saknade" rader att se ut som orphans → katastrofradering.
+    // Tillåt bara småraderingar i den här passningen; massradering blockeras med varning.
+    const cloudCount=(cloudRows||[]).length;
+    const massDelete=toDelete.length>=3 && (toDelete.length/Math.max(1,cloudCount))>=0.10;
+    if(massDelete){
+      console.warn(`⚠️ Synk: BLOCKERADE massradering av ${toDelete.length}/${cloudCount} rader i ${table} — sannolikt multi-flik/enhet med olika state. Stäng dubblettflikar/instanser och försök igen.`);
+      if(typeof showToast==='function') showToast(`⚠️ Sync blockerade massradering i ${table} (${toDelete.length}/${cloudCount}). Stäng dubblettflikar.`,6000);
+      return;
     }
+    const {error:delErr}=await supa.from(table).delete().in('id',toDelete);
+    if(delErr) console.warn('Orphan-radering misslyckades för',table,delErr.message);
+    else console.log(`Sync: raderade ${toDelete.length} borttagna rader från ${table}`);
   }catch(e){
     console.warn('deleteCloudOrphans-fel för',table,e.message);
   }
