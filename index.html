@@ -3658,8 +3658,11 @@ async function syncToCloud(silent){
       })));
       if(error) throw error;
     }
-    // Radera moln-rader som tagits bort lokalt (bara efter att vi laddat molnet minst en gång)
-    if(cloudLoadComplete){
+    // Radera moln-rader som tagits bort lokalt — BARA på manuell synk (silent=false).
+    // Auto-debouncad bakgrundssynk får ALDRIG radera, för då kan en stale-instans
+    // (annan flik/enhet med gammalt state) plötsligt nuka nytt arbete. Vill du städa
+    // molnet — tryck "Synka till molnet" i Profil.
+    if(!silent && cloudLoadComplete){
       await deleteCloudOrphans('pass_types',allPasses.map(p=>p.id),uid);
       await deleteCloudOrphans('exercises',exercises.map(ex=>ex.id),uid);
       await deleteCloudOrphans('training_forms',trainingForms.map(tf=>tf.id),uid);
@@ -3684,7 +3687,7 @@ async function syncToCloud(silent){
       })));
       if(error) console.warn('Goals sync failed (kör supabase-schema-v2.sql om kolumner saknas):',error);
     }
-    if(cloudLoadComplete) await deleteCloudOrphans('user_goals',userGoals.map(g=>g.id),uid);
+    if(!silent && cloudLoadComplete) await deleteCloudOrphans('user_goals',userGoals.map(g=>g.id),uid);
     // Steg 6: Push workout_history
     if(workoutHistory.length){
       const {error}=await supa.from('workout_history').upsert(workoutHistory.map(w=>({
@@ -3694,7 +3697,7 @@ async function syncToCloud(silent){
       })));
       if(error) throw error;
     }
-    if(cloudLoadComplete) await deleteCloudOrphans('workout_history',workoutHistory.map(w=>w.id),uid);
+    if(!silent && cloudLoadComplete) await deleteCloudOrphans('workout_history',workoutHistory.map(w=>w.id),uid);
     const now=new Date();
     localStorage.setItem('alpinfys_last_sync',now.toISOString());
     if(!silent) setSyncStatus('✓ Synkat till molnet '+now.toLocaleTimeString('sv-SE'),'ok');
