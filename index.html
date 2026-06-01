@@ -742,6 +742,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
           <label class="field-label">Programtext</label>
           <textarea class="field-input" id="imp-text" rows="8" placeholder="T.ex.:&#10;&#10;LSK Slalom-program&#10;&#10;PASS 1 - Styrka A&#10;- Knäböj 5x5 80 kg&#10;- Marklyft 3x5 100 kg&#10;- Bulgarian split squat 3x10&#10;&#10;PASS 2 - Intervaller&#10;- 8x400m i Z4 med 90s vila" style="resize:vertical;min-height:140px;font-family:inherit"></textarea>
         </div>
+        <div>
+          <label class="field-label">Instruktioner till AI <span style="color:var(--text-3);font-weight:400;font-size:10px">(frivilligt)</span></label>
+          <textarea class="field-input" id="imp-instructions" rows="2" placeholder="T.ex. &quot;Bara veckorna 1-4&quot;, &quot;Skippa uppvärmningen&quot;, &quot;Lägg in YouTube-länkar som tutorial per övning&quot;, &quot;Varje pass har 7-8 övningar — ta med alla&quot;..." style="resize:vertical;min-height:48px;font-family:inherit;font-size:12px"></textarea>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div><label class="field-label">Prefix (på pass-namn)</label><input class="field-input" id="imp-prefix" placeholder="T.ex. LSK"></div>
           <div><label class="field-label">Taggar (sökbara, komma-separerat)</label><input class="field-input" id="imp-tag" placeholder="T.ex. Lidingö Slalom, utegym"></div>
@@ -1505,6 +1509,8 @@ function openImportMenu(){ openModal('m-import-menu'); }
 function openImportProgram(){
   document.getElementById('imp-text').value='';
   document.getElementById('imp-text').placeholder='T.ex.:\n\nLSK Slalom-program\n\nPASS 1 - Styrka A\n- Knäböj 5x5 80 kg\n- Marklyft 3x5 100 kg\n- Bulgarian split squat 3x10\n\nPASS 2 - Intervaller\n- 8x400m i Z4 med 90s vila';
+  const inst=document.getElementById('imp-instructions');
+  if(inst) inst.value='';
   document.getElementById('imp-prefix').value='';
   document.getElementById('imp-tag').value='';
   document.getElementById('imp-file-status').textContent='';
@@ -1699,8 +1705,11 @@ async function onImportFileChange(input){
       if(pdfText.length>=300){
         // Text-baserad PDF → använd text-vägen (snabb, billig, inget rate-limit)
         document.getElementById('imp-text').value=pdfText;
+        // Räkna ev. extraherade hyperlinks (för användarfeedback)
+        const linkMatch=pdfText.match(/--- LÄNKAR I DOKUMENTET[\s\S]*?\n([\s\S]*)$/);
+        const linkCount=linkMatch?(linkMatch[1].match(/\(sida \d+\)/g)||[]).length:0;
         status.style.color='var(--accent-3)';
-        status.textContent=`✓ ${name} läst — ${pdfText.length} tecken text extraherad. Granska i textrutan och tryck "Analysera".`;
+        status.textContent=`✓ ${name} läst — ${pdfText.length} tecken text${linkCount?` + ${linkCount} klickbar(a) länk(ar)`:''} extraherad. Granska i textrutan och tryck "Analysera".`;
       }else{
         // Skannad PDF (lite/ingen text) → fall tillbaka till PDF-som-bild
         const MAX_BYTES=3*1024*1024;
@@ -1761,6 +1770,7 @@ async function extractPdfText(file){
   const arrayBuffer=await file.arrayBuffer();
   const pdf=await window.pdfjsLib.getDocument({data:arrayBuffer}).promise;
   let text='';
+  const annotationLinks=[]; // klickbara länkar bakom text (hyperlinks utan synlig URL)
   for(let i=1;i<=pdf.numPages;i++){
     const page=await pdf.getPage(i);
     const content=await page.getTextContent();
@@ -1772,7 +1782,23 @@ async function extractPdfText(file){
       text+=it.str+' ';
       lastY=y;
     });
+    // Hämta länk-annoteringar (klickbara hyperlinks som inte syns som URL i texten)
+    try{
+      const anns=await page.getAnnotations();
+      (anns||[]).forEach(a=>{
+        if(a.subtype==='Link'&&a.url) annotationLinks.push({page:i,url:a.url});
+      });
+    }catch(e){ /* ignorera om annotationer inte stöds */ }
     text+='\n\n';
+  }
+  // Lägg till "dolda" länkar (länk-annoteringar) i slutet så AI kan matcha dem till övningar
+  // baserat på sida + kontext. Synliga URL:er i texten finns redan i texten ovan.
+  if(annotationLinks.length){
+    // Deduplicera URL:er per sida
+    const seen=new Set();
+    const uniq=annotationLinks.filter(l=>{const k=l.page+'|'+l.url;if(seen.has(k))return false;seen.add(k);return true;});
+    text+='\n--- LÄNKAR I DOKUMENTET (klickbara hyperlinks som ev. inte syns som URL i texten — matcha till närmsta övning baserat på sidnummer) ---\n';
+    uniq.forEach(l=>{ text+=`(sida ${l.page}) ${l.url}\n`; });
   }
   return text;
 }
@@ -1888,6 +1914,8 @@ async function onImpUrlChange(urlText){
 
 async function analyzeImport(){
   const text=document.getElementById('imp-text').value.trim();
+  const instructionsEl=document.getElementById('imp-instructions');
+  const instructions=instructionsEl?instructionsEl.value.trim():'';
   const prefix=document.getElementById('imp-prefix').value.trim();
   const tag=document.getElementById('imp-tag').value.trim();
   if(!text&&!importAttachment){alert('Klistra in programmet eller ladda upp en fil först');return;}
@@ -1942,7 +1970,8 @@ Format:
           "distance": number eller null,
           "time": number eller null,
           "pulseZone": 1-5 eller null,
-          "note": "string"
+          "note": "string",
+          "videoUrl": "YouTube/Vimeo-URL eller null — endast om dokumentet kopplar en video/länk till just denna övning"
         }
       ]
     }
@@ -1955,22 +1984,36 @@ Viktigt:
 - För cardio (running/cycling): använd distance (km) + time (min), sätt reps=null
 - För styrka: använd weight (kg) + reps. För egenvikt-övningar: weight kan vara null + useBodyweight=true.
 - Översätt övningar till svenska om de är på annat språk
-- Om en övning är "8x400m" → sets=8, distance=0.4, time=null, primaryForm=running, muscle=Kondition`;
+- Om en övning är "8x400m" → sets=8, distance=0.4, time=null, primaryForm=running, muscle=Kondition
+
+LÄNKAR / TUTORIAL-VIDEOR PER ÖVNING:
+- Om dokumentet innehåller länkar (YouTube/Vimeo-URLer eller klickbara hyperlinks) som hör till specifika övningar — extrahera dem och sätt på rätt övning som "videoUrl".
+- Matcha en länk till den övning den står närmast i texten (samma rad, samma stycke, eller "se video"-formuleringar). Om dokumentet har en separat sektion "LÄNKAR I DOKUMENTET" (med sidnummer) — använd sidnumret för att matcha mot den övning som finns på samma sida.
+- Sätt "videoUrl": null när du inte är säker på matchningen — hellre tom än fel.
+
+ANVÄNDARENS EXTRA INSTRUKTIONER:
+- Om användaren har skickat med extra instruktioner — följ dem noga. De OVERRIDAR allmänna riktlinjer (t.ex. "skippa uppvärmningen", "bara veckorna 1-4", "översätt övningsnamn", "ta INTE med set/reps", osv.).`;
+  // Bygg en "extra info"-sträng som skickas med varje AI-anrop.
+  // - För filer/youtube: text-fältet är extra kontext utöver filen.
+  // - För text-läge: text-fältet är SJÄLVA programmet — då hamnar bara instructions i extra.
+  const extraInstrBlock = instructions ? 'SÄRSKILDA INSTRUKTIONER FRÅN ANVÄNDAREN (följ noga, gäller framför allmänna riktlinjer):\n'+instructions : '';
   try{
     let data;
     if(importAttachment&&importAttachment.type==='youtube'){
       // YouTube-källa: en eller flera videos. Varje video = ett pass. (Litet svar — ett anrop.)
-      data=await analyzeYoutubeImport(systemPrompt,text);
+      data=await analyzeYoutubeImport(systemPrompt,text,instructions);
     }else if(importAttachment){
       // PDF-bild/bild (skannad PDF eller foto): batcha med fil-block (cache+pacing mot rate-limit)
-      data=await analyzeInBatches({kind:'file'},systemPrompt,text);
+      const extra=[text,extraInstrBlock].filter(Boolean).join('\n\n');
+      data=await analyzeInBatches({kind:'file'},systemPrompt,extra);
     }else if(text.length>1500){
       // Stor text (inkl text extraherad ur PDF): batcha för att undvika timeout på stora svar.
       // Text är token-snålt → inget rate-limit-problem även om vi upprepar texten per batch.
-      data=await analyzeInBatches({kind:'text',text},systemPrompt,'');
+      data=await analyzeInBatches({kind:'text',text},systemPrompt,extraInstrBlock);
     }else{
       // Liten text — ett anrop räcker
-      const result=await callClaude([{role:'user',content:text}],{system:systemPrompt,max_tokens:16384});
+      const userContent = extraInstrBlock ? (text+'\n\n---\n'+extraInstrBlock) : text;
+      const result=await callClaude([{role:'user',content:userContent}],{system:systemPrompt,max_tokens:16384});
       data=parseClaudeJson(result.text);
     }
     if(!data.passes||!Array.isArray(data.passes)||!data.passes.length){
@@ -2070,7 +2113,7 @@ async function analyzeInBatches(source,systemPrompt,userText){
 }
 
 // YouTube-import (befintlig logik, ett anrop)
-async function analyzeYoutubeImport(systemPrompt,text){
+async function analyzeYoutubeImport(systemPrompt,text,instructions){
   const videos=importAttachment.videos||[];
   const blocks=[];
   for(const v of videos){
@@ -2094,6 +2137,9 @@ async function analyzeYoutubeImport(systemPrompt,text){
     instr+=`\n\nExtra instruktioner/övningslistor från användaren (använd som PRIMÄR källa när det finns):\n${text}`;
   }else{
     instr+=`\n\nOBS: användaren har inte skrivit in övningslistan, så du måste gissa övningar baserat på titel/tumnagel. Lägg en kort markering i pass-beskrivningen att övningarna är AI:s gissning och bör verifieras.`;
+  }
+  if(instructions){
+    instr+=`\n\nSÄRSKILDA INSTRUKTIONER FRÅN ANVÄNDAREN (följ noga, gäller framför allmänna riktlinjer):\n${instructions}`;
   }
   blocks.push({type:'text',text:instr});
   const result=await callClaude([{role:'user',content:blocks}],{system:systemPrompt,max_tokens:16384});
@@ -2829,7 +2875,8 @@ function renderImportPreview(){
       const w=e.weight?` · ${fmtNum(e.weight)} kg`:'';
       const pz=e.pulseZone?` · Z${e.pulseZone}`:'';
       const bw=e.useBodyweight?' · 🤸 egen vikt':'';
-      return `<div style="padding:3px 0;border-bottom:0.5px solid var(--border);font-size:11px"><b>${e.name}</b> <span style="color:var(--text-3)">· ${e.muscle||'–'} · ${setsReps}${dist}${w}${pz}${bw}</span></div>`;
+      const vid=(e.videoUrl&&parseVideoUrl(e.videoUrl))?' · 🎬 tutorial':'';
+      return `<div style="padding:3px 0;border-bottom:0.5px solid var(--border);font-size:11px"><b>${e.name}</b> <span style="color:var(--text-3)">· ${e.muscle||'–'} · ${setsReps}${dist}${w}${pz}${bw}${vid}</span></div>`;
     }).join('');
     return `
     <div class="card" style="padding:12px">
@@ -3374,6 +3421,12 @@ async function confirmImport(){
     // Skapa övningar i banken (skippa dubbletter)
     const exerciseRefs=[];
     for(const exData of (p.exercises||[])){
+      // AI-föreslagen videoUrl per övning (PDF/text-import) eller pass-bredd från YouTube-tumnaglar
+      // AI kan returnera videoUrl per övning (från PDF/text-import). Validera mot parseVideoUrl
+      // så vi inte sparar skräpsträngar. Fall tillbaka till YouTube-import-pass-URL om sådan finns.
+      const aiVideoRaw=(exData.videoUrl&&typeof exData.videoUrl==='string')?exData.videoUrl.trim():'';
+      const aiVideoUrl=(aiVideoRaw&&parseVideoUrl(aiVideoRaw))?aiVideoRaw:null;
+      const exVideoUrl=aiVideoUrl||videoUrlForPass||null;
       let ex=exercises.find(e=>e.name.toLowerCase().trim()===exData.name.toLowerCase().trim());
       if(!ex){
         const isCardio=pfChoice==='running'||pfChoice==='cycling';
@@ -3398,9 +3451,9 @@ async function confirmImport(){
           note:exData.note||'',
           fav:false,
           mediaUrl:null,
-          videoUrl:videoUrlForPass||null
+          videoUrl:exVideoUrl
         };
-        if(videoUrlForPass) videoUrlsApplied++;
+        if(exVideoUrl) videoUrlsApplied++;
         exercises.push(ex);
         newExCount++;
       }else{
@@ -3410,8 +3463,8 @@ async function confirmImport(){
           if(!(ex.customTags||[]).includes(t)) ex.customTags=[...(ex.customTags||[]),t];
         });
         // Lägg tutorial-länk på återanvänd övning bara om den saknar — skriv inte över befintlig
-        if(videoUrlForPass&&!ex.videoUrl){
-          ex.videoUrl=videoUrlForPass;
+        if(exVideoUrl&&!ex.videoUrl){
+          ex.videoUrl=exVideoUrl;
           videoUrlsApplied++;
         }
       }
