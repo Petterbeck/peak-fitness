@@ -2080,35 +2080,69 @@ async function analyzeInBatches(source,systemPrompt,userText){
   const passNames=parseClaudeJsonArray(listRes.text);
   if(!passNames.length) throw new Error('Hittade inga pass i programmet. Försök igen eller klistra in texten manuellt.');
   // ---- FAS 2: detaljera i batchar ----
-  const BATCH=4;
+  // BATCH=3 — säkrare än 4 när svaret innehåller videoUrl per övning (växer JSON-storleken).
+  const BATCH=3;
   const allPasses=[];
   const failedBatches=[];
+  const errorSamples=[]; // för att kunna visa Erik VAD som gick fel (rate limit / timeout / parse)
   let batchIndex=0;
+
+  // Hjälpfunktion: detaljera en grupp pass-namn i ETT anrop. Kastar fel vid problem.
+  async function detailOne(passList,maxTokens){
+    const detailInstr=`Från detta träningsprogram: detaljera ENBART följande pass (exakt dessa, i denna ordning): ${passList.map(n=>'"'+n+'"').join(', ')}.\n\nFör VARJE pass: ta med ALLA övningar som faktiskt står i programmet för det passet, exakt som de står, i rätt ordning. Hitta inte på övningar. Returnera JSON enligt formatet i system-prompten med en "passes"-array som innehåller exakt dessa ${passList.length} pass.${userText?'\n\nAnvändarens info: '+userText:''}`;
+    const detailMsg=[{role:'user',content:buildBatchUserContent(source,detailInstr)}];
+    const detailRes=await callClaudeWithRetry(detailMsg,{system:systemPrompt,max_tokens:maxTokens});
+    const batchData=parseClaudeJson(detailRes.text);
+    if(!(batchData.passes&&Array.isArray(batchData.passes))) throw new Error('AI returnerade ingen "passes"-array');
+    return batchData.passes;
+  }
+
   for(let i=0;i<passNames.length;i+=BATCH){
     const batch=passNames.slice(i,i+BATCH);
     const from=i+1,to=Math.min(i+BATCH,passNames.length);
     // Liten paus mellan anrop för att sprida token-användningen (extra säkerhet mot rate-limit).
     if(batchIndex>0){
       if(loadingDetail) loadingDetail.textContent=`Väntar kort… (pass ${from}–${to} av ${passNames.length})`;
-      await new Promise(r=>setTimeout(r,source.kind==='file'?4000:1200));
+      // Text-läge replay:ar hela programtexten per batch → input-TPM växer snabbt på tier-1.
+      // 2500ms paus räcker normalt; fil-läge har större payload och behöver mer.
+      await new Promise(r=>setTimeout(r,source.kind==='file'?4000:2500));
     }
     batchIndex++;
     if(loadingDetail) loadingDetail.textContent=`Steg 2/2: Detaljerar pass ${from}–${to} av ${passNames.length}…`;
-    const detailInstr=`Från detta träningsprogram: detaljera ENBART följande pass (exakt dessa, i denna ordning): ${batch.map(n=>'"'+n+'"').join(', ')}.\n\nFör VARJE pass: ta med ALLA övningar som faktiskt står i programmet för det passet, exakt som de står, i rätt ordning. Hitta inte på övningar. Returnera JSON enligt formatet i system-prompten med en "passes"-array som innehåller exakt dessa ${batch.length} pass.${userText?'\n\nAnvändarens info: '+userText:''}`;
-    const detailMsg=[{role:'user',content:buildBatchUserContent(source,detailInstr)}];
     try{
-      const detailRes=await callClaudeWithRetry(detailMsg,{system:systemPrompt,max_tokens:8000});
-      const batchData=parseClaudeJson(detailRes.text);
-      if(batchData.passes&&Array.isArray(batchData.passes)) allPasses.push(...batchData.passes);
-      else failedBatches.push(`${from}-${to}`);
-    }catch(e){
-      console.warn(`Batch ${from}-${to} misslyckades helt:`,e.message);
-      failedBatches.push(`${from}-${to}`);
+      const passes=await detailOne(batch,8000);
+      allPasses.push(...passes);
+    }catch(batchErr){
+      console.warn(`Batch ${from}-${to} misslyckades helt:`,batchErr.message);
+      // FALLBACK: prova att hämta varje pass i batchen ett-i-taget (mindre svar, mindre risk att truncate)
+      let recovered=0;
+      for(let j=0;j<batch.length;j++){
+        const single=[batch[j]];
+        if(loadingDetail) loadingDetail.textContent=`Återställning: pass ${from+j} (${batch[j]})…`;
+        // Liten paus mellan singel-anrop också för att undvika rate-limit
+        if(j>0) await new Promise(r=>setTimeout(r,source.kind==='file'?2000:800));
+        try{
+          const passes=await detailOne(single,3500);
+          allPasses.push(...passes);
+          recovered++;
+        }catch(singleErr){
+          console.warn(`Singel-pass ${from+j} (${batch[j]}) misslyckades:`,singleErr.message);
+          failedBatches.push(`${batch[j]}`);
+          if(errorSamples.length<3) errorSamples.push(singleErr.message);
+        }
+      }
+      if(recovered===0 && errorSamples.length===0) errorSamples.push(batchErr.message);
     }
   }
-  if(!allPasses.length) throw new Error('Kunde inte detaljera passen (alla delförsök misslyckades). Försök igen om en stund.');
-  if(failedBatches.length) importBatchWarning=`⚠️ ${failedBatches.length} grupp(er) kunde inte hämtas (pass ${failedBatches.join(', ')}). ${allPasses.length} pass kom med — kör importen igen för resten om du vill.`;
-  else importBatchWarning='';
+  if(!allPasses.length){
+    const sample=errorSamples.length?'\n\nFelorsak: '+errorSamples[0]:'';
+    throw new Error('Kunde inte detaljera passen (alla delförsök misslyckades). Försök igen om en stund.'+sample);
+  }
+  if(failedBatches.length){
+    const list=failedBatches.slice(0,5).join(', ')+(failedBatches.length>5?` … (+${failedBatches.length-5} till)`:'');
+    const reason=errorSamples.length?` Felorsak: ${errorSamples[0]}.`:'';
+    importBatchWarning=`⚠️ ${failedBatches.length} pass kunde inte hämtas (${list}). ${allPasses.length} pass kom med — kör importen igen för resten om du vill.${reason}`;
+  }else importBatchWarning='';
   return {passes:allPasses};
 }
 
