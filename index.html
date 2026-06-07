@@ -2080,8 +2080,10 @@ async function analyzeInBatches(source,systemPrompt,userText){
   const passNames=parseClaudeJsonArray(listRes.text);
   if(!passNames.length) throw new Error('Hittade inga pass i programmet. Försök igen eller klistra in texten manuellt.');
   // ---- FAS 2: detaljera i batchar ----
-  // BATCH=3 — säkrare än 4 när svaret innehåller videoUrl per övning (växer JSON-storleken).
-  const BATCH=3;
+  // BATCH=2 — när svaret innehåller videoUrl per övning + notes blir JSON stor.
+  // Vi använder max_tokens=8000 (Sonnet 4.5-default) och en pass med 8 övningar + URL:er
+  // landar lätt på 1500-2000 tokens — så 2 pass per batch är säkrare än 3.
+  const BATCH=2;
   const allPasses=[];
   const failedBatches=[];
   const errorSamples=[]; // för att kunna visa Erik VAD som gick fel (rate limit / timeout / parse)
@@ -2122,7 +2124,8 @@ async function analyzeInBatches(source,systemPrompt,userText){
         // Liten paus mellan singel-anrop också för att undvika rate-limit
         if(j>0) await new Promise(r=>setTimeout(r,source.kind==='file'?2000:800));
         try{
-          const passes=await detailOne(single,3500);
+          // 8000 = Sonnet 4.5 default cap. En pass med många övningar + URLer kan behöva 2000+
+          const passes=await detailOne(single,8000);
           allPasses.push(...passes);
           recovered++;
         }catch(singleErr){
@@ -2258,10 +2261,40 @@ function parseClaudeJson(raw){
 
 // Försök reparera ett JSON som blev avhugget (oftast pga max_tokens-gräns)
 function tryRepairTruncatedJson(s){
-  // Räkna { och } för att se hur många stängare som saknas
-  let openBraces=0,openBrackets=0,inString=false,escape=false;
+  // STEG 0: Detektera "literal newline mitt i sträng" (vanligt fel när AI trunkeras mitt i ett värde,
+  // t.ex. `"videoUrl": "https:\n    },`). Vi går igenom tecken-för-tecken och om vi hittar en
+  // unescaped \n medan inString=true → klipp där, det är där svaret blev avhugget.
+  let cutAt=-1;
+  let inStr=false,esc=false;
   for(let i=0;i<s.length;i++){
     const c=s[i];
+    if(esc){esc=false;continue;}
+    if(c==='\\'){esc=true;continue;}
+    if(c==='"'){inStr=!inStr;continue;}
+    if(inStr&&(c==='\n'||c==='\r')){
+      // Hittade literal newline inuti string → klipp HÄR (före den unterminerade strängens start)
+      // Hitta start på den trasiga strängen genom att gå tillbaka till föregående "
+      // och därifrån tillbaka till föregående , eller {.
+      const stringStart=s.lastIndexOf('"',i-1);
+      if(stringStart>0){
+        // Hitta property-start (sista , eller { före stringStart för att klippa hela trasiga propertyn)
+        // Vi backar tills vi hittar tecken som inte är whitespace eller ":"
+        let j=stringStart-1;
+        while(j>0&&/[\s":a-zA-Z0-9_]/.test(s[j])) j--;
+        if(s[j]===','||s[j]==='{'){
+          cutAt=j+1; // efter komma/öppen-brace
+        }else{
+          cutAt=stringStart;
+        }
+      }
+      break;
+    }
+  }
+  let working=cutAt>0?s.slice(0,cutAt):s;
+  // Räkna { och } för att se hur många stängare som saknas
+  let openBraces=0,openBrackets=0,inString=false,escape=false;
+  for(let i=0;i<working.length;i++){
+    const c=working[i];
     if(escape){escape=false;continue;}
     if(c==='\\'){escape=true;continue;}
     if(c==='"')inString=!inString;
@@ -2271,10 +2304,8 @@ function tryRepairTruncatedJson(s){
     else if(c==='[')openBrackets++;
     else if(c===']')openBrackets--;
   }
-  if(openBraces<=0&&openBrackets<=0) return null;
-  // Försök hitta sista kompletta property och klipp där
-  // Strategi: gå baklänges och hitta sista "}, " som följs av "{ — då har vi ett komplett objekt i array
-  let repaired=s;
+  if(openBraces<=0&&openBrackets<=0&&cutAt<0) return null;
+  let repaired=working;
   // Om mitt i en string — klipp där
   if(inString){
     const lastQuote=repaired.lastIndexOf('"');
@@ -2298,6 +2329,8 @@ function tryRepairTruncatedJson(s){
       else if(c===']')openBrackets--;
     }
   }
+  // Ta bort ev. dinglande komma efter klippet (t.ex. `},` i slutet)
+  repaired=repaired.replace(/,\s*$/,'');
   // Lägg på saknade stängare
   while(openBrackets-->0) repaired+=']';
   while(openBraces-->0) repaired+='}';
