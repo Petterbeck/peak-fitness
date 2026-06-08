@@ -804,12 +804,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div class="modal" id="m-delete-program" onclick="closeBg(event,'m-delete-program')">
   <div class="modal-sheet"><div class="modal-handle"></div>
     <div class="modal-title">Radera program helt</div>
-    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Radera ett helt program — alla pass som tillhör programmet försvinner ur passlistan, och alla ev. inplanerade datum för dem rensas. <b>Övningarna i banken behålls.</b> Detta går inte att ångra.</div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Radera ett helt program — alla pass som tillhör programmet försvinner ur passlistan, och alla ev. inplanerade datum för dem rensas. Detta går inte att ångra.</div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <div>
         <label class="field-label">Program att radera</label>
         <select class="field-select" id="dp-tag" onchange="updateDeleteProgramPreview()"></select>
       </div>
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px;line-height:1.45">
+        <input type="checkbox" id="dp-include-exercises" checked onchange="updateDeleteProgramPreview()" style="width:18px;height:18px;accent-color:var(--accent);margin-top:2px;flex-shrink:0">
+        <span><b>Radera även övningarna ur banken</b> som bara används av detta program. Övningar som återanvänds av andra pass behålls. (Användbart om du tänker importera om programmet med korrekta länkar.)</span>
+      </label>
       <div class="notice" id="dp-summary" style="font-size:12px;line-height:1.5"></div>
       <div style="display:flex;gap:8px">
         <button class="btn-primary" onclick="confirmDeleteProgram()" style="flex:1;background:#e8200a"><i class="ti ti-trash"></i> Radera programmet</button>
@@ -3428,48 +3432,83 @@ function openDeleteProgram(){
   openModal('m-delete-program');
 }
 
+// Hjälp: räkna ut vilka övningar som ENBART används av programmets pass och därför är trygga att radera.
+// (De som även används av andra pass utanför programmet behålls.)
+function computeProgramExerciseCleanup(tag){
+  const passes=getPassesByTag(tag);
+  const passIds=new Set(passes.map(p=>p.pass.id));
+  // Övningar refererade av programmets pass
+  const programExIds=new Set();
+  passes.forEach(({pass})=>{
+    (pass.exerciseRefs||[]).forEach(r=>{ if(r.exId) programExIds.add(r.exId); });
+  });
+  // Övningar refererade av ALLA ANDRA pass (utanför programmet)
+  const otherExIds=new Set();
+  trainingForms.forEach(tf=>{
+    (tf.passTypes||[]).forEach(pt=>{
+      if(passIds.has(pt.id)) return; // skip programmets pass
+      (pt.exerciseRefs||[]).forEach(r=>{ if(r.exId) otherExIds.add(r.exId); });
+    });
+  });
+  // Trygga att radera = de som är i programExIds men INTE i otherExIds
+  const safeToDeleteExIds=[...programExIds].filter(id=>!otherExIds.has(id));
+  const reusedExIds=[...programExIds].filter(id=>otherExIds.has(id));
+  return {passes,passIds,programExIds,safeToDeleteExIds,reusedExIds};
+}
+
 function updateDeleteProgramPreview(){
   const tag=document.getElementById('dp-tag').value;
   const el=document.getElementById('dp-summary');
+  const includeEl=document.getElementById('dp-include-exercises');
   if(!tag){el.innerHTML='⏳ Välj program.';return;}
-  const passes=getPassesByTag(tag);
-  const passIds=new Set(passes.map(p=>p.pass.id));
+  const {passes,passIds,safeToDeleteExIds,reusedExIds}=computeProgramExerciseCleanup(tag);
   const planned=plannedWorkouts.filter(pw=>passIds.has(pw.passId)||plannedMatchesTag(pw,tag)).length;
   const sample=passes.slice(0,5).map(p=>escapeHtml(p.pass.name)).join(', ')+(passes.length>5?'…':'');
-  el.innerHTML=`🗑️ Raderar <b>${passes.length} pass</b> från "${escapeHtml(tag)}"${planned?` + <b>${planned} inplanerade datum</b>`:''}.<br><span style="color:var(--text-3);font-size:11px">Pass: ${sample}</span>`;
+  const exLine=includeEl&&includeEl.checked
+    ? `<br>📚 <b>${safeToDeleteExIds.length} övningar</b> raderas ur banken${reusedExIds.length?` (<b>${reusedExIds.length}</b> återanvänds av andra pass och behålls)`:''}.`
+    : '';
+  el.innerHTML=`🗑️ Raderar <b>${passes.length} pass</b> från "${escapeHtml(tag)}"${planned?` + <b>${planned} inplanerade datum</b>`:''}.${exLine}<br><span style="color:var(--text-3);font-size:11px">Pass: ${sample}</span>`;
 }
 
 async function confirmDeleteProgram(){
   const tag=document.getElementById('dp-tag').value;
   if(!tag){alert('Välj program');return;}
-  const passes=getPassesByTag(tag);
+  const includeExercises=document.getElementById('dp-include-exercises')?.checked!==false;
+  const {passes,passIds,safeToDeleteExIds,reusedExIds}=computeProgramExerciseCleanup(tag);
   if(!passes.length){alert('Inga pass hittades för "'+tag+'"');return;}
-  const passIds=new Set(passes.map(p=>p.pass.id));
   // Samla in vilka planned_workouts som ska bort INNAN vi filtrerar lokalt
   const plannedToDelete=plannedWorkouts.filter(pw=>passIds.has(pw.passId)||plannedMatchesTag(pw,tag));
   const plannedIds=new Set(plannedToDelete.map(pw=>pw.id));
-  if(!confirm(`Radera ${passes.length} pass från "${tag}"${plannedIds.size?` + ${plannedIds.size} inplanerade datum`:''}?\n\nÖvningarna i banken behålls.\n\nDetta går inte att ångra.`)) return;
+  const exIdsToDelete=includeExercises?new Set(safeToDeleteExIds):new Set();
+  const exLine=includeExercises&&exIdsToDelete.size?`\n+ ${exIdsToDelete.size} övningar ur banken${reusedExIds.length?` (${reusedExIds.length} återanvänds av andra pass och behålls)`:''}`:'';
+  if(!confirm(`Radera ${passes.length} pass från "${tag}"${plannedIds.size?` + ${plannedIds.size} inplanerade datum`:''}${exLine}?\n\nDetta går inte att ångra.`)) return;
   // Ta bort passen ur respektive träningsforms passTypes
   trainingForms.forEach(tf=>{
     tf.passTypes=(tf.passTypes||[]).filter(pt=>!passIds.has(pt.id));
   });
   // Ta bort alla inplanerade datum som refererar till dem
   plannedWorkouts=plannedWorkouts.filter(pw=>!plannedIds.has(pw.id));
+  // Ta bort övningar som bara används av detta program (om användaren valt det)
+  if(exIdsToDelete.size){
+    exercises=exercises.filter(ex=>!exIdsToDelete.has(ex.id));
+  }
   // Radera explicit i molnet (autosync deletar inte — race-skydd). Användaren har bekräftat radering.
   if(supa&&currentUser){
     const uid=currentUser.id;
     try{
       if(passIds.size) await supa.from('pass_types').delete().eq('user_id',uid).in('id',[...passIds]);
       if(plannedIds.size) await supa.from('planned_workouts').delete().eq('user_id',uid).in('id',[...plannedIds]);
+      if(exIdsToDelete.size) await supa.from('exercises').delete().eq('user_id',uid).in('id',[...exIdsToDelete]);
     }catch(e){ console.warn('Moln-radering misslyckades (kör "Synka till molnet" senare):',e.message); }
   }
   saveState();
   closeModal('m-delete-program');
   if(typeof renderPassList==='function') renderPassList();
+  if(typeof renderExercises==='function') renderExercises();
   if(typeof renderCalendar==='function') renderCalendar();
   if(typeof renderHomeHero==='function') renderHomeHero();
   if(typeof renderWeekSchedule==='function') renderWeekSchedule();
-  alert(`✅ Programmet "${tag}" raderat: ${passes.length} pass${plannedIds.size?` + ${plannedIds.size} inplanerade datum`:''} borttagna. Övningarna behölls.`);
+  alert(`✅ Programmet "${tag}" raderat:\n• ${passes.length} pass${plannedIds.size?`\n• ${plannedIds.size} inplanerade datum`:''}${exIdsToDelete.size?`\n• ${exIdsToDelete.size} övningar ur banken`:''}${reusedExIds.length&&includeExercises?`\n\n${reusedExIds.length} övningar behölls (används av andra pass).`:''}`);
 }
 
 /* ========== DELNING (Fas 1: dela + ta emot) ========== */
@@ -3835,8 +3874,11 @@ async function confirmImport(){
         tags.forEach(t=>{
           if(!(ex.customTags||[]).includes(t)) ex.customTags=[...(ex.customTags||[]),t];
         });
-        // Lägg tutorial-länk på återanvänd övning bara om den saknar — skriv inte över befintlig
-        if(exVideoUrl&&!ex.videoUrl){
+        // Tutorial-länk på återanvänd övning: importens videoUrl kommer från text-extraktets
+        // [LÄNK:]-markörer (deterministisk mappning, inte AI-gissning) — så vi VILL skriva över
+        // även en befintlig URL om den nya finns. Det gör att re-import efter en fel-mappning
+        // ger rätt URL utan att man behöver radera övningen först.
+        if(exVideoUrl&&ex.videoUrl!==exVideoUrl){
           ex.videoUrl=exVideoUrl;
           videoUrlsApplied++;
         }
