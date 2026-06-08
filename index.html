@@ -2003,6 +2003,83 @@ async function onImpUrlChange(urlText){
   }
 }
 
+// Plocka ut alla (övningsnamn-anchor, url)-par från text-extraktet i läsordning.
+// extractPdfText producerar markörer i formatet "OvningsNamn [LÄNK: https://...]".
+// Anchor = texten närmast före markören på samma rad/stycke (max 100 tecken).
+function extractTextLinkPairs(text){
+  if(!text||typeof text!=='string') return [];
+  const pairs=[];
+  // Greedy match: text-före-markör (utan nyrad eller [) + [LÄNK: url ]
+  const re=/([^\n\[]{2,120}?)\s*\[LÄNK:\s*([^\]\s]+)\s*\]/g;
+  let m;
+  while((m=re.exec(text))!==null){
+    let anchor=m[1].trim();
+    // Strippa ledande bullets/listor/numreringar — det är skräp framför namnet
+    anchor=anchor.replace(/^[•\-*–—]+\s*/,'').replace(/^\d+[.\)]\s*/,'').replace(/^[a-z]\)\s*/i,'').trim();
+    if(anchor.length>=2) pairs.push({anchor,url:m[2].trim()});
+  }
+  return pairs;
+}
+
+// Skriv över AI:s videoUrl per övning med URL:erna från text-extraktets [LÄNK:]-markörer.
+// AI:n får hitta övningarna; vi tilldelar URL:erna deterministiskt baserat på namn-matchning.
+// "Used"-set säkerställer att samma URL inte tilldelas två gånger även om övningsnamn dyker
+// upp i flera pass (sällsynt).
+function applyTextLinkOverrides(data,sourceText){
+  const pairs=extractTextLinkPairs(sourceText);
+  if(!pairs.length||!data||!Array.isArray(data.passes)) return;
+  const used=new Set();
+  function findMatch(exName){
+    if(!exName||typeof exName!=='string') return -1;
+    const lo=exName.toLowerCase().trim();
+    if(!lo) return -1;
+    // Strategi 1: anchor innehåller hela övningsnamnet (case-insensitive)
+    for(let i=0;i<pairs.length;i++){
+      if(used.has(i)) continue;
+      if(pairs[i].anchor.toLowerCase().includes(lo)) return i;
+    }
+    // Strategi 2: anchor innehåller de första 2-3 orden i övningsnamnet
+    const words=lo.split(/\s+/).filter(w=>w.length>=3);
+    if(words.length>=2){
+      const head=words.slice(0,Math.min(3,words.length)).join(' ');
+      if(head.length>=6){
+        for(let i=0;i<pairs.length;i++){
+          if(used.has(i)) continue;
+          if(pairs[i].anchor.toLowerCase().includes(head)) return i;
+        }
+      }
+    }
+    // Strategi 3: anchor innehåller övningsnamnets längsta unika ord (>= 5 tecken)
+    const longWord=words.sort((a,b)=>b.length-a.length)[0];
+    if(longWord&&longWord.length>=5){
+      for(let i=0;i<pairs.length;i++){
+        if(used.has(i)) continue;
+        if(pairs[i].anchor.toLowerCase().includes(longWord)) return i;
+      }
+    }
+    return -1;
+  }
+  let overridden=0,cleared=0;
+  data.passes.forEach(p=>{
+    (p.exercises||[]).forEach(ex=>{
+      const idx=findMatch(ex.name);
+      if(idx>=0){
+        const correctUrl=pairs[idx].url;
+        if(ex.videoUrl!==correctUrl){ ex.videoUrl=correctUrl; overridden++; }
+        used.add(idx);
+      }else if(ex.videoUrl){
+        // Ingen matchande [LÄNK:] för denna övning. Om AI:s hallucinerade URL råkar finnas
+        // bland våra extraherade pairs vet vi att AI tog den från fel ställe — rensa den.
+        const aiUrl=ex.videoUrl;
+        const stolenFromOther=pairs.some(p=>p.url===aiUrl);
+        if(stolenFromOther){ ex.videoUrl=null; cleared++; }
+        // Annars: AI kanske fick URL:en från synlig text utan [LÄNK:] — lämna kvar.
+      }
+    });
+  });
+  console.log(`[applyTextLinkOverrides] ${pairs.length} länkar i text-extrakt, ${overridden} videoUrl uppdaterade, ${cleared} hallucinerade rensade.`);
+}
+
 async function analyzeImport(){
   const text=document.getElementById('imp-text').value.trim();
   const instructionsEl=document.getElementById('imp-instructions');
@@ -2127,6 +2204,10 @@ ANVÄNDARENS EXTRA INSTRUKTIONER:
     if(!data.passes||!Array.isArray(data.passes)||!data.passes.length){
       throw new Error('AI:n returnerade inga pass — kontrollera programtexten och försök igen');
     }
+    // Skriv över AI:s videoUrl-fält mekaniskt från text-extraktets [LÄNK:]-markörer.
+    // AI tenderar att blanda om URL:erna när den ska kopiera över 30+ länkar — vi har redan
+    // den exakta övningsnamn→URL-mappningen från PDF-extraktionen, så vi använder den.
+    applyTextLinkOverrides(data,text);
     importedData={data,prefix,tag};
     renderImportPreview();
     showImpView('preview');
