@@ -2033,12 +2033,26 @@ function applyTextLinkOverrides(data,sourceText){
     if(!exName||typeof exName!=='string') return -1;
     const lo=exName.toLowerCase().trim();
     if(!lo) return -1;
-    // Strategi 1: anchor innehåller hela övningsnamnet (case-insensitive)
+    // Strategi 1: exakt likhet
+    for(let i=0;i<pairs.length;i++){
+      if(used.has(i)) continue;
+      if(pairs[i].anchor.toLowerCase().trim()===lo) return i;
+    }
+    // Strategi 2: anchor innehåller hela övningsnamnet (AI returnerade kortare/exakt namn)
     for(let i=0;i<pairs.length;i++){
       if(used.has(i)) continue;
       if(pairs[i].anchor.toLowerCase().includes(lo)) return i;
     }
-    // Strategi 2: anchor innehåller de första 2-3 orden i övningsnamnet
+    // Strategi 3: övningsnamnet innehåller hela anchor:n — AI inkluderade beskrivning/förtydligande
+    // i namnet (t.ex. "Step up på box/bänk m stång" där anchor bara är "Step up"). Detta är
+    // det VANLIGASTE caset när AI är pratig. Kräver anchor >=4 tecken så att korta ord inte
+    // ger falskmatch.
+    for(let i=0;i<pairs.length;i++){
+      if(used.has(i)) continue;
+      const anc=pairs[i].anchor.toLowerCase().trim();
+      if(anc.length>=4&&lo.includes(anc)) return i;
+    }
+    // Strategi 4: första 2-3 orden i övningsnamnet matchar anchor
     const words=lo.split(/\s+/).filter(w=>w.length>=3);
     if(words.length>=2){
       const head=words.slice(0,Math.min(3,words.length)).join(' ');
@@ -2049,7 +2063,7 @@ function applyTextLinkOverrides(data,sourceText){
         }
       }
     }
-    // Strategi 3: anchor innehåller övningsnamnets längsta unika ord (>= 5 tecken)
+    // Strategi 5: anchor innehåller övningsnamnets längsta unika ord (>= 5 tecken)
     const longWord=words.sort((a,b)=>b.length-a.length)[0];
     if(longWord&&longWord.length>=5){
       for(let i=0;i<pairs.length;i++){
