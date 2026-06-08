@@ -1770,34 +1770,62 @@ async function extractPdfText(file){
   const arrayBuffer=await file.arrayBuffer();
   const pdf=await window.pdfjsLib.getDocument({data:arrayBuffer}).promise;
   let text='';
-  const annotationLinks=[]; // klickbara länkar bakom text (hyperlinks utan synlig URL)
+  const orphanLinks=[]; // länkar utan tydlig text-koppling (för fallback)
   for(let i=1;i<=pdf.numPages;i++){
     const page=await pdf.getPage(i);
     const content=await page.getTextContent();
-    // Försök behålla layout med radbrytningar
-    let lastY=null;
-    content.items.forEach(it=>{
-      const y=it.transform?.[5];
-      if(lastY!==null&&Math.abs(y-lastY)>2) text+='\n';
-      text+=it.str+' ';
-      lastY=y;
-    });
-    // Hämta länk-annoteringar (klickbara hyperlinks som inte syns som URL i texten)
+    // Hämta länk-annoteringar och deras rect (klickbar yta) i samma PDF-koordinatsystem som text-itemen
+    let pageLinks=[];
     try{
       const anns=await page.getAnnotations();
-      (anns||[]).forEach(a=>{
-        if(a.subtype==='Link'&&a.url) annotationLinks.push({page:i,url:a.url});
-      });
-    }catch(e){ /* ignorera om annotationer inte stöds */ }
+      pageLinks=(anns||[]).filter(a=>a.subtype==='Link'&&a.url&&Array.isArray(a.rect)&&a.rect.length>=4).map(a=>({
+        url:a.url,
+        x1:Math.min(a.rect[0],a.rect[2]),
+        y1:Math.min(a.rect[1],a.rect[3]),
+        x2:Math.max(a.rect[0],a.rect[2]),
+        y2:Math.max(a.rect[1],a.rect[3]),
+        matched:false
+      }));
+    }catch(e){ /* ignorera om annoteringar inte stöds */ }
+    // Bygg text och inject:a [LÄNK: url] direkt efter sista text-item som överlappar varje länks rect
+    let lastY=null;
+    const items=content.items||[];
+    for(let k=0;k<items.length;k++){
+      const it=items[k];
+      const x=it.transform?.[4]??0;
+      const y=it.transform?.[5]??0;
+      const w=it.width||0;
+      const h=it.height||10;
+      if(lastY!==null&&Math.abs(y-lastY)>2) text+='\n';
+      text+=it.str+' ';
+      // Är detta text-item inuti en länk-rect? Tolerans ±3 PDF-units för glapp mellan baseline/font-storlek.
+      const cx=x+w/2, cy=y+h/2;
+      const link=pageLinks.find(L=>!L.matched&&cx>=L.x1-3&&cx<=L.x2+3&&cy>=L.y1-3&&cy<=L.y2+3);
+      if(link){
+        // Är nästa text-item OCKSÅ inuti samma rect? Då väntar vi tills sista, så hela texten kommer FÖRE [LÄNK]
+        let nextInSame=false;
+        if(k+1<items.length){
+          const ni=items[k+1];
+          const nx=(ni.transform?.[4]??0)+(ni.width||0)/2;
+          const ny=(ni.transform?.[5]??0)+(ni.height||10)/2;
+          nextInSame=nx>=link.x1-3&&nx<=link.x2+3&&ny>=link.y1-3&&ny<=link.y2+3;
+        }
+        if(!nextInSame){
+          text+=`[LÄNK: ${link.url}] `;
+          link.matched=true;
+        }
+      }
+      lastY=y;
+    }
+    // Länkar utan text-koppling → orphan-fallback
+    pageLinks.filter(L=>!L.matched).forEach(L=>orphanLinks.push({page:i,url:L.url}));
     text+='\n\n';
   }
-  // Lägg till "dolda" länkar (länk-annoteringar) i slutet så AI kan matcha dem till övningar
-  // baserat på sida + kontext. Synliga URL:er i texten finns redan i texten ovan.
-  if(annotationLinks.length){
-    // Deduplicera URL:er per sida
+  // Orphan-länkar i slutet som fallback (om vi inte hittade text under deras rect)
+  if(orphanLinks.length){
     const seen=new Set();
-    const uniq=annotationLinks.filter(l=>{const k=l.page+'|'+l.url;if(seen.has(k))return false;seen.add(k);return true;});
-    text+='\n--- LÄNKAR I DOKUMENTET (klickbara hyperlinks som ev. inte syns som URL i texten — matcha till närmsta övning baserat på sidnummer) ---\n';
+    const uniq=orphanLinks.filter(l=>{const k=l.page+'|'+l.url;if(seen.has(k))return false;seen.add(k);return true;});
+    text+='\n--- LÄNKAR UTAN TYDLIG TEXT-KOPPLING (matcha till närmsta övning baserat på sidnummer) ---\n';
     uniq.forEach(l=>{ text+=`(sida ${l.page}) ${l.url}\n`; });
   }
   return text;
@@ -1987,9 +2015,10 @@ Viktigt:
 - Om en övning är "8x400m" → sets=8, distance=0.4, time=null, primaryForm=running, muscle=Kondition
 
 LÄNKAR / TUTORIAL-VIDEOR PER ÖVNING:
-- Om dokumentet innehåller länkar (YouTube/Vimeo-URLer eller klickbara hyperlinks) som hör till specifika övningar — extrahera dem och sätt på rätt övning som "videoUrl".
-- Matcha en länk till den övning den står närmast i texten (samma rad, samma stycke, eller "se video"-formuleringar). Om dokumentet har en separat sektion "LÄNKAR I DOKUMENTET" (med sidnummer) — använd sidnumret för att matcha mot den övning som finns på samma sida.
-- Sätt "videoUrl": null när du inte är säker på matchningen — hellre tom än fel.
+- HÖGSTA PRIORITET: markörer [LÄNK: https://...] som står DIREKT efter en övningsnamn (eller samma rad) tillhör den övningen. Använd URL:en som "videoUrl" — ingen gissning. Detta är förextraherade klickbara hyperlinks med exakt textmatchning.
+- Synliga URL:er i texten (t.ex. https://youtube.com/...) på samma rad eller stycke som en övning → "videoUrl".
+- Om dokumentet har en separat sektion "LÄNKAR UTAN TYDLIG TEXT-KOPPLING" (med sidnummer) — använd den BARA som sista utväg (sidan rymmer typiskt flera övningar så matchningen blir osäker).
+- Sätt "videoUrl": null när du inte är säker — hellre tom än fel match.
 
 ANVÄNDARENS EXTRA INSTRUKTIONER:
 - Om användaren har skickat med extra instruktioner — följ dem noga. De OVERRIDAR allmänna riktlinjer (t.ex. "skippa uppvärmningen", "bara veckorna 1-4", "översätt övningsnamn", "ta INTE med set/reps", osv.).`;
