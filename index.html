@@ -1770,11 +1770,16 @@ async function extractPdfText(file){
   const arrayBuffer=await file.arrayBuffer();
   const pdf=await window.pdfjsLib.getDocument({data:arrayBuffer}).promise;
   let text='';
-  const orphanLinks=[]; // länkar utan tydlig text-koppling (för fallback)
+  const orphanLinks=[];
+  // ROW_H = ungefärlig radhöjd i PDF-units. Används för att gruppera baseline-y i "rader" så att
+  // länkar (vars rect-mitt sitter några units ovanför textens baseline) hamnar i samma rad.
+  const ROW_H=14;
+  const rowOf=y=>Math.round(y/ROW_H);
   for(let i=1;i<=pdf.numPages;i++){
     const page=await pdf.getPage(i);
     const content=await page.getTextContent();
-    // Hämta länk-annoteringar och deras rect (klickbar yta) i samma PDF-koordinatsystem som text-itemen
+    const items=content.items||[];
+    // Hämta länk-annoteringar med rect
     let pageLinks=[];
     try{
       const anns=await page.getAnnotations();
@@ -1783,49 +1788,88 @@ async function extractPdfText(file){
         x1:Math.min(a.rect[0],a.rect[2]),
         y1:Math.min(a.rect[1],a.rect[3]),
         x2:Math.max(a.rect[0],a.rect[2]),
-        y2:Math.max(a.rect[1],a.rect[3]),
-        matched:false
+        y2:Math.max(a.rect[1],a.rect[3])
       }));
-    }catch(e){ /* ignorera om annoteringar inte stöds */ }
-    // Bygg text och inject:a [LÄNK: url] direkt efter sista text-item som överlappar varje länks rect
+    }catch(e){ /* ignorera */ }
+    // För varje länk: hitta vilken text-item den ska sitta EFTER i texten (anchor).
+    // Generisk regel: länken tillhör övningens namn som senast lästes före länken. Den kan ligga
+    // (a) på samma rad som namnet, (b) i en under-rad (beskrivning/bullet) som tillhör samma övning,
+    // eller (c) i en separat ikon-rad mellan två övningar. I alla fall vill vi placera [LÄNK:]-markören
+    // efter det text-item som senast lästes före länken i läsordning (top-down, left-right).
+    const linkAnchors={}; // itemIdx → [urls]
+    for(const link of pageLinks){
+      const lx1=link.x1, lx2=link.x2;
+      const lcx=(lx1+lx2)/2, lcy=(link.y1+link.y2)/2;
+      const lRow=rowOf(lcy);
+      let bestIdx=-1;
+      // === STEG A: samma-rad geometrisk match — text vars CENTER ligger inuti länkens rect.
+      // Bland matchande, välj den med högst x-end (rightmost) så markören hamnar efter hela
+      // den länkade texten (t.ex. "Lateral line jumps" → marker efter "jumps").
+      let bestEndX=-Infinity;
+      for(let k=0;k<items.length;k++){
+        const it=items[k];
+        if(!it.str||!it.str.trim()) continue;
+        const ix=it.transform?.[4]??0;
+        const iy=it.transform?.[5]??0;
+        const iw=it.width||0;
+        const cx=ix+iw/2;
+        const inRowY=iy>=link.y1-3&&iy<=link.y2+3;
+        const inRowX=cx>=lx1-3&&cx<=lx2+3;
+        if(inRowY&&inRowX){
+          const endX=ix+iw;
+          if(endX>bestEndX){bestEndX=endX;bestIdx=k;}
+        }
+      }
+      // === STEG B: läsordning-fallback. Hitta text-item som senast lästes före länken.
+      // Senast i läsordning = högsta x på samma rad (rader matchar via rowOf), eller
+      // text-item på raden ovanför (högre y) om ingenting på samma rad ligger före länken.
+      if(bestIdx===-1){
+        let bestKey=null; // [row, endX] — vi vill maximera "närmast länken bakåt"
+        for(let k=0;k<items.length;k++){
+          const it=items[k];
+          if(!it.str||!it.str.trim()) continue;
+          const ix=it.transform?.[4]??0;
+          const iy=it.transform?.[5]??0;
+          const iw=it.width||0;
+          const iRow=rowOf(iy);
+          // Läses före länken om: raden är högre upp på sidan (iRow > lRow), eller
+          // samma rad men text-startar vänster om länkens högra kant.
+          const isBefore=iRow>lRow||(iRow===lRow&&ix<lx2);
+          if(!isBefore) continue;
+          // Vi vill ha SENASTE i läsordning = lägsta iRow (närmast länken uppifrån), sedan högsta x
+          // på den raden.
+          if(bestKey===null || iRow<bestKey[0] || (iRow===bestKey[0]&&(ix+iw)>bestKey[1])){
+            bestKey=[iRow,ix+iw];
+            bestIdx=k;
+          }
+        }
+      }
+      if(bestIdx>=0){
+        if(!linkAnchors[bestIdx]) linkAnchors[bestIdx]=[];
+        linkAnchors[bestIdx].push(link.url);
+      }else{
+        orphanLinks.push({page:i,url:link.url});
+      }
+    }
+    // Bygg texten linjärt och inject:a [LÄNK:] efter varje anchor-item
     let lastY=null;
-    const items=content.items||[];
     for(let k=0;k<items.length;k++){
       const it=items[k];
-      const x=it.transform?.[4]??0;
       const y=it.transform?.[5]??0;
-      const w=it.width||0;
-      const h=it.height||10;
       if(lastY!==null&&Math.abs(y-lastY)>2) text+='\n';
       text+=it.str+' ';
-      // Är detta text-item inuti en länk-rect? Tolerans ±3 PDF-units för glapp mellan baseline/font-storlek.
-      const cx=x+w/2, cy=y+h/2;
-      const link=pageLinks.find(L=>!L.matched&&cx>=L.x1-3&&cx<=L.x2+3&&cy>=L.y1-3&&cy<=L.y2+3);
-      if(link){
-        // Är nästa text-item OCKSÅ inuti samma rect? Då väntar vi tills sista, så hela texten kommer FÖRE [LÄNK]
-        let nextInSame=false;
-        if(k+1<items.length){
-          const ni=items[k+1];
-          const nx=(ni.transform?.[4]??0)+(ni.width||0)/2;
-          const ny=(ni.transform?.[5]??0)+(ni.height||10)/2;
-          nextInSame=nx>=link.x1-3&&nx<=link.x2+3&&ny>=link.y1-3&&ny<=link.y2+3;
-        }
-        if(!nextInSame){
-          text+=`[LÄNK: ${link.url}] `;
-          link.matched=true;
-        }
+      if(linkAnchors[k]){
+        for(const url of linkAnchors[k]) text+=`[LÄNK: ${url}] `;
       }
       lastY=y;
     }
-    // Länkar utan text-koppling → orphan-fallback
-    pageLinks.filter(L=>!L.matched).forEach(L=>orphanLinks.push({page:i,url:L.url}));
     text+='\n\n';
   }
-  // Orphan-länkar i slutet som fallback (om vi inte hittade text under deras rect)
+  // Orphan-fallback för länkar som vi inte kunde anchora alls (sällsynt)
   if(orphanLinks.length){
     const seen=new Set();
     const uniq=orphanLinks.filter(l=>{const k=l.page+'|'+l.url;if(seen.has(k))return false;seen.add(k);return true;});
-    text+='\n--- LÄNKAR UTAN TYDLIG TEXT-KOPPLING (matcha till närmsta övning baserat på sidnummer) ---\n';
+    text+='\n--- LÄNKAR UTAN TEXT-ANKARE (matcha till närmsta övning baserat på sidnummer) ---\n';
     uniq.forEach(l=>{ text+=`(sida ${l.page}) ${l.url}\n`; });
   }
   return text;
@@ -2015,17 +2059,26 @@ Viktigt:
 - Om en övning är "8x400m" → sets=8, distance=0.4, time=null, primaryForm=running, muscle=Kondition
 
 LÄNKAR / TUTORIAL-VIDEOR PER ÖVNING — VIKTIGT:
-- En markör i formatet [LÄNK: https://...] i texten är en EXAKT förextraherad koppling: URL:en sitter geometriskt PÅ ÖVNINGSNAMNET i PDF:en. Behandla den som AUKTORITATIV — gissa aldrig om.
-- REGEL: en [LÄNK: URL]-markör tillhör övningen som står OMEDELBART FÖRE markören på samma rad. Inte raden efter, inte ett annat pass — den övning vars namn markören placerats efter.
-- EXEMPEL från en typisk extraktion:
+- En markör i formatet [LÄNK: https://...] i texten är en EXAKT förextraherad koppling. Behandla den som AUKTORITATIV — gissa aldrig om.
+- GENERISK REGEL: en [LÄNK: URL]-markör tillhör den ÖVNING vars namn senast nämndes före markören i läsordning. Det innebär:
+    (a) Markören står på samma rad som övningsnamnet → tillhör den övningen.
+    (b) Markören står i en under-rad (beskrivning, bullet, "vila X sek"-rad, eller en separat ikon-rad) som följer EFTER övningsnamnet men FÖRE nästa övnings namn → tillhör fortfarande den övningen.
+  Med andra ord: hitta senaste övningens NAMN-rubrik som föregår markören — det är den övning som ska få videoUrl.
+- EXEMPEL 1 — markör på samma rad som namnet:
     Lateral line jumps [LÄNK: https://www.youtube.com/watch?v=ABC] , vila 30 sek   12x3
     Tuck jumps   [LÄNK: https://www.youtube.com/watch?v=DEF] vila 60 sek   8x3
   → Lateral line jumps får videoUrl=https://www.youtube.com/watch?v=ABC
   → Tuck jumps får videoUrl=https://www.youtube.com/watch?v=DEF
-  Markören kan stå mitt i en rad (t.ex. mellan övningens namn och resten av raden som "vila 30 sek") — det är fortfarande SAMMA övnings videoUrl.
-- Synliga URL:er i texten (t.ex. https://youtube.com/...) på samma rad/stycke som en övning → "videoUrl".
-- Sektion "LÄNKAR UTAN TYDLIG TEXT-KOPPLING" (om den finns) används BARA som sista utväg — typiskt flera övningar per sida så matchningen blir osäker.
-- Sätt "videoUrl": null bara när det INTE finns någon markör/URL kopplat till övningen — inte för att du är osäker på en explicit [LÄNK:] markör.
+- EXEMPEL 2 — markör i en under-rad/beskrivning som hör till föregående övningsnamn:
+    Frivändning
+      - 3 set x 5 reps
+      - Vila 90 sek [LÄNK: https://www.youtube.com/watch?v=GHI]
+    Knäböj
+      - 3 set x 8 reps
+  → Frivändning får videoUrl=https://www.youtube.com/watch?v=GHI (markören står under Frivändnings beskrivning, före Knäböjs namn).
+- Synliga URL:er i texten (t.ex. https://youtube.com/...) följer samma regel.
+- Sektion "LÄNKAR UTAN TEXT-ANKARE" används BARA som sista utväg (matchning per sidnummer blir osäker).
+- Sätt "videoUrl": null bara när det INTE finns någon markör/URL associerad med övningen.
 
 ANVÄNDARENS EXTRA INSTRUKTIONER:
 - Om användaren har skickat med extra instruktioner — följ dem noga. De OVERRIDAR allmänna riktlinjer (t.ex. "skippa uppvärmningen", "bara veckorna 1-4", "översätt övningsnamn", "ta INTE med set/reps", osv.).`;
