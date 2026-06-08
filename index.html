@@ -2014,11 +2014,18 @@ Viktigt:
 - Översätt övningar till svenska om de är på annat språk
 - Om en övning är "8x400m" → sets=8, distance=0.4, time=null, primaryForm=running, muscle=Kondition
 
-LÄNKAR / TUTORIAL-VIDEOR PER ÖVNING:
-- HÖGSTA PRIORITET: markörer [LÄNK: https://...] som står DIREKT efter en övningsnamn (eller samma rad) tillhör den övningen. Använd URL:en som "videoUrl" — ingen gissning. Detta är förextraherade klickbara hyperlinks med exakt textmatchning.
-- Synliga URL:er i texten (t.ex. https://youtube.com/...) på samma rad eller stycke som en övning → "videoUrl".
-- Om dokumentet har en separat sektion "LÄNKAR UTAN TYDLIG TEXT-KOPPLING" (med sidnummer) — använd den BARA som sista utväg (sidan rymmer typiskt flera övningar så matchningen blir osäker).
-- Sätt "videoUrl": null när du inte är säker — hellre tom än fel match.
+LÄNKAR / TUTORIAL-VIDEOR PER ÖVNING — VIKTIGT:
+- En markör i formatet [LÄNK: https://...] i texten är en EXAKT förextraherad koppling: URL:en sitter geometriskt PÅ ÖVNINGSNAMNET i PDF:en. Behandla den som AUKTORITATIV — gissa aldrig om.
+- REGEL: en [LÄNK: URL]-markör tillhör övningen som står OMEDELBART FÖRE markören på samma rad. Inte raden efter, inte ett annat pass — den övning vars namn markören placerats efter.
+- EXEMPEL från en typisk extraktion:
+    Lateral line jumps [LÄNK: https://www.youtube.com/watch?v=ABC] , vila 30 sek   12x3
+    Tuck jumps   [LÄNK: https://www.youtube.com/watch?v=DEF] vila 60 sek   8x3
+  → Lateral line jumps får videoUrl=https://www.youtube.com/watch?v=ABC
+  → Tuck jumps får videoUrl=https://www.youtube.com/watch?v=DEF
+  Markören kan stå mitt i en rad (t.ex. mellan övningens namn och resten av raden som "vila 30 sek") — det är fortfarande SAMMA övnings videoUrl.
+- Synliga URL:er i texten (t.ex. https://youtube.com/...) på samma rad/stycke som en övning → "videoUrl".
+- Sektion "LÄNKAR UTAN TYDLIG TEXT-KOPPLING" (om den finns) används BARA som sista utväg — typiskt flera övningar per sida så matchningen blir osäker.
+- Sätt "videoUrl": null bara när det INTE finns någon markör/URL kopplat till övningen — inte för att du är osäker på en explicit [LÄNK:] markör.
 
 ANVÄNDARENS EXTRA INSTRUKTIONER:
 - Om användaren har skickat med extra instruktioner — följ dem noga. De OVERRIDAR allmänna riktlinjer (t.ex. "skippa uppvärmningen", "bara veckorna 1-4", "översätt övningsnamn", "ta INTE med set/reps", osv.).`;
