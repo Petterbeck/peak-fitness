@@ -2059,25 +2059,34 @@ function applyTextLinkOverrides(data,sourceText){
     }
     return -1;
   }
-  let overridden=0,cleared=0;
+  let overridden=0,cleared=0,assigned=0;
+  const mappingLog=[];
   data.passes.forEach(p=>{
     (p.exercises||[]).forEach(ex=>{
       const idx=findMatch(ex.name);
       if(idx>=0){
         const correctUrl=pairs[idx].url;
+        const before=ex.videoUrl;
         if(ex.videoUrl!==correctUrl){ ex.videoUrl=correctUrl; overridden++; }
         used.add(idx);
+        assigned++;
+        mappingLog.push(`✓ "${ex.name}" → pair#${idx+1} "${pairs[idx].anchor}" (${before&&before!==correctUrl?'OVERRIDE från '+(before||'').slice(-20):'OK'})`);
       }else if(ex.videoUrl){
-        // Ingen matchande [LÄNK:] för denna övning. Om AI:s hallucinerade URL råkar finnas
-        // bland våra extraherade pairs vet vi att AI tog den från fel ställe — rensa den.
         const aiUrl=ex.videoUrl;
         const stolenFromOther=pairs.some(p=>p.url===aiUrl);
-        if(stolenFromOther){ ex.videoUrl=null; cleared++; }
-        // Annars: AI kanske fick URL:en från synlig text utan [LÄNK:] — lämna kvar.
+        if(stolenFromOther){
+          ex.videoUrl=null; cleared++;
+          mappingLog.push(`✗ "${ex.name}" → CLEARED (AI hallucinerade ${aiUrl.slice(-20)})`);
+        }else{
+          mappingLog.push(`? "${ex.name}" → BEHÅLLER AI:s ${aiUrl.slice(-20)} (ingen [LÄNK:] match)`);
+        }
       }
     });
   });
-  console.log(`[applyTextLinkOverrides] ${pairs.length} länkar i text-extrakt, ${overridden} videoUrl uppdaterade, ${cleared} hallucinerade rensade.`);
+  // Spara statistik så UI:t kan visa det
+  data._linkOverrideStats={pairs:pairs.length,assigned,overridden,cleared};
+  console.log(`[applyTextLinkOverrides] ${pairs.length} [LÄNK:]-par i text, ${assigned} matchade, ${overridden} URL:er ändrade, ${cleared} AI-hallucinationer rensade.`);
+  console.log('[applyTextLinkOverrides] Detalj:\n  '+mappingLog.join('\n  '));
 }
 
 async function analyzeImport(){
@@ -3149,7 +3158,15 @@ function renderImportPreview(){
   document.getElementById('imp-pass-count').textContent=data.passes.length;
   // Visa varning om någon batch misslyckades vid stor import
   const warnEl=document.getElementById('imp-batch-warning');
-  if(warnEl) warnEl.innerHTML=importBatchWarning?`<div class="notice" style="font-size:11px;background:rgba(232,32,10,0.08);border-color:#e8200a;color:#e8200a;line-height:1.5;margin-bottom:8px">${escapeHtml(importBatchWarning)}</div>`:'';
+  let warnHtml=importBatchWarning?`<div class="notice" style="font-size:11px;background:rgba(232,32,10,0.08);border-color:#e8200a;color:#e8200a;line-height:1.5;margin-bottom:8px">${escapeHtml(importBatchWarning)}</div>`:'';
+  // Visa link-override-statistik: bekräftar för användaren att markörerna mappats deterministiskt
+  const lo=data._linkOverrideStats;
+  if(lo&&lo.pairs>0){
+    const fixed=lo.overridden+lo.cleared;
+    const stats=fixed>0?` <span style="color:#b96b00">(${lo.overridden} URL ändrad${lo.overridden!==1?'e':''} från AI:s svar${lo.cleared?', '+lo.cleared+' rensade':''})</span>`:'';
+    warnHtml+=`<div class="notice" style="font-size:11px;background:rgba(34,168,82,0.08);border-color:#22a852;color:#0d7333;line-height:1.5;margin-bottom:8px">🎬 ${lo.assigned}/${lo.pairs} tutorial-länkar mappade från text-extrakt${stats}</div>`;
+  }
+  if(warnEl) warnEl.innerHTML=warnHtml;
   const formOptions=trainingForms.map(f=>`<option value="${f.id}">${f.icon} ${f.name}</option>`).join('')+'<option value="__new__">+ Skapa ny träningsform</option>';
   const html=data.passes.map((p,i)=>{
     const defaultForm=guessTrainingForm(p.primaryForm);
