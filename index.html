@@ -382,9 +382,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div id="pass-list" style="display:flex;flex-direction:column;gap:8px"></div>
     </div>
     <div id="tab-schema" style="display:flex;flex-direction:column;gap:12px">
-      <div style="display:flex;gap:8px">
-        <button class="btn-ghost" onclick="openScheduleProgram()" style="flex:1;font-size:12px;font-weight:700;color:var(--accent-3);border-color:var(--accent-3)"><i class="ti ti-calendar-plus"></i> Schemalägg program</button>
-        <button class="btn-ghost" onclick="openRemoveProgram()" style="flex:1;font-size:12px;font-weight:700;color:#e8200a;border-color:#e8200a44"><i class="ti ti-calendar-minus"></i> Ta bort program</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn-ghost" onclick="openScheduleProgram()" style="flex:1 1 130px;font-size:11px;font-weight:700;color:var(--accent-3);border-color:var(--accent-3);padding:8px 6px"><i class="ti ti-calendar-plus"></i> Schemalägg</button>
+        <button class="btn-ghost" onclick="openRemoveProgram()" style="flex:1 1 130px;font-size:11px;font-weight:700;color:#b96b00;border-color:#b96b0044;padding:8px 6px"><i class="ti ti-calendar-minus"></i> Avschemalägg</button>
+        <button class="btn-ghost" onclick="openDeleteProgram()" style="flex:1 1 130px;font-size:11px;font-weight:700;color:#e8200a;border-color:#e8200a44;padding:8px 6px"><i class="ti ti-trash"></i> Radera program</button>
       </div>
       <div class="cal-wrap">
         <div class="cal-nav">
@@ -795,6 +796,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div style="display:flex;gap:8px">
         <button class="btn-primary" onclick="confirmRemoveProgram()" style="flex:1;background:#e8200a"><i class="ti ti-trash"></i> Ta bort inplanerade pass</button>
         <button class="btn-ghost" onclick="closeModal('m-remove-program')">Avbryt</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="m-delete-program" onclick="closeBg(event,'m-delete-program')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Radera program helt</div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Radera ett helt program — alla pass som tillhör programmet försvinner ur passlistan, och alla ev. inplanerade datum för dem rensas. <b>Övningarna i banken behålls.</b> Detta går inte att ångra.</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label class="field-label">Program att radera</label>
+        <select class="field-select" id="dp-tag" onchange="updateDeleteProgramPreview()"></select>
+      </div>
+      <div class="notice" id="dp-summary" style="font-size:12px;line-height:1.5"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="confirmDeleteProgram()" style="flex:1;background:#e8200a"><i class="ti ti-trash"></i> Radera programmet</button>
+        <button class="btn-ghost" onclick="closeModal('m-delete-program')">Avbryt</button>
       </div>
     </div>
   </div>
@@ -3282,6 +3301,63 @@ function confirmRemoveProgram(){
   if(typeof renderHomeHero==='function') renderHomeHero();
   if(typeof renderWeekSchedule==='function') renderWeekSchedule();
   alert(`✅ ${n} inplanerade pass borttagna.`);
+}
+
+/* ========== RADERA PROGRAM HELT (pass + ev. schemaläggning, behåll övningar) ========== */
+function openDeleteProgram(){
+  const tags=getProgramTags();
+  const select=document.getElementById('dp-tag');
+  if(!tags.length){
+    alert('Inga program hittades. Ett program är en grupp av pass med samma tagg (minst 2 pass).');
+    return;
+  }
+  select.innerHTML=tags.map(t=>`<option value="${escapeHtml(t.tag)}">${escapeHtml(t.tag)} (${t.count} pass)</option>`).join('');
+  updateDeleteProgramPreview();
+  openModal('m-delete-program');
+}
+
+function updateDeleteProgramPreview(){
+  const tag=document.getElementById('dp-tag').value;
+  const el=document.getElementById('dp-summary');
+  if(!tag){el.innerHTML='⏳ Välj program.';return;}
+  const passes=getPassesByTag(tag);
+  const passIds=new Set(passes.map(p=>p.pass.id));
+  const planned=plannedWorkouts.filter(pw=>passIds.has(pw.passId)||plannedMatchesTag(pw,tag)).length;
+  const sample=passes.slice(0,5).map(p=>escapeHtml(p.pass.name)).join(', ')+(passes.length>5?'…':'');
+  el.innerHTML=`🗑️ Raderar <b>${passes.length} pass</b> från "${escapeHtml(tag)}"${planned?` + <b>${planned} inplanerade datum</b>`:''}.<br><span style="color:var(--text-3);font-size:11px">Pass: ${sample}</span>`;
+}
+
+async function confirmDeleteProgram(){
+  const tag=document.getElementById('dp-tag').value;
+  if(!tag){alert('Välj program');return;}
+  const passes=getPassesByTag(tag);
+  if(!passes.length){alert('Inga pass hittades för "'+tag+'"');return;}
+  const passIds=new Set(passes.map(p=>p.pass.id));
+  // Samla in vilka planned_workouts som ska bort INNAN vi filtrerar lokalt
+  const plannedToDelete=plannedWorkouts.filter(pw=>passIds.has(pw.passId)||plannedMatchesTag(pw,tag));
+  const plannedIds=new Set(plannedToDelete.map(pw=>pw.id));
+  if(!confirm(`Radera ${passes.length} pass från "${tag}"${plannedIds.size?` + ${plannedIds.size} inplanerade datum`:''}?\n\nÖvningarna i banken behålls.\n\nDetta går inte att ångra.`)) return;
+  // Ta bort passen ur respektive träningsforms passTypes
+  trainingForms.forEach(tf=>{
+    tf.passTypes=(tf.passTypes||[]).filter(pt=>!passIds.has(pt.id));
+  });
+  // Ta bort alla inplanerade datum som refererar till dem
+  plannedWorkouts=plannedWorkouts.filter(pw=>!plannedIds.has(pw.id));
+  // Radera explicit i molnet (autosync deletar inte — race-skydd). Användaren har bekräftat radering.
+  if(supa&&currentUser){
+    const uid=currentUser.id;
+    try{
+      if(passIds.size) await supa.from('pass_types').delete().eq('user_id',uid).in('id',[...passIds]);
+      if(plannedIds.size) await supa.from('planned_workouts').delete().eq('user_id',uid).in('id',[...plannedIds]);
+    }catch(e){ console.warn('Moln-radering misslyckades (kör "Synka till molnet" senare):',e.message); }
+  }
+  saveState();
+  closeModal('m-delete-program');
+  if(typeof renderPassList==='function') renderPassList();
+  if(typeof renderCalendar==='function') renderCalendar();
+  if(typeof renderHomeHero==='function') renderHomeHero();
+  if(typeof renderWeekSchedule==='function') renderWeekSchedule();
+  alert(`✅ Programmet "${tag}" raderat: ${passes.length} pass${plannedIds.size?` + ${plannedIds.size} inplanerade datum`:''} borttagna. Övningarna behölls.`);
 }
 
 /* ========== DELNING (Fas 1: dela + ta emot) ========== */
