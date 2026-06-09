@@ -1245,8 +1245,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
           <div><label class="field-label">Antal varv</label><input class="field-input" id="ex-f-c-sets" type="number" value="1" min="1"></div>
-          <div><label class="field-label">Distans km</label><input class="field-input" id="ex-f-c-dist" type="number" placeholder="–" min="0" step="0.1"></div>
-          <div><label class="field-label">Tid min</label><input class="field-input" id="ex-f-c-time" type="number" placeholder="–" min="0" step="0.5"></div>
+          <div><label class="field-label">Distans km</label><input class="field-input" id="ex-f-c-dist" type="text" inputmode="decimal" placeholder="0,4" autocomplete="off"></div>
+          <div><label class="field-label">Tid</label><input class="field-input" id="ex-f-c-time" type="text" inputmode="numeric" placeholder="1:48" autocomplete="off"><div style="font-size:10px;color:var(--text-3);margin-top:3px">Format: <b>min:sek</b> (t.ex. 1:48)</div></div>
         </div>
         <div class="notice" style="font-size:12px">📡 I etapp 5: importera data automatiskt från Garmin/Strava.</div>
       </div>
@@ -2220,7 +2220,10 @@ Viktigt:
 - För cardio (running/cycling): använd distance (km) + time (min), sätt reps=null
 - För styrka: använd weight (kg) + reps. För egenvikt-övningar: weight kan vara null + useBodyweight=true.
 - Översätt övningar till svenska om de är på annat språk
+- VIKTIGT — distans ANGES ALLTID I KM som decimal: 100m=0.1, 200m=0.2, 400m=0.4, 800m=0.8, 1000m=1.0, 5km=5
+- Tid anges som DECIMAL MIN: 1 min 48 sek = 1.8 min, 30 sek = 0.5 min, 2 min = 2
 - Om en övning är "8x400m" → sets=8, distance=0.4, time=null, primaryForm=running, muscle=Kondition
+- Om en övning är "5x30 sek intervaller" → sets=5, distance=null, time=0.5, primaryForm=running, muscle=Kondition
 
 LÄNKAR / TUTORIAL-VIDEOR PER ÖVNING — VIKTIGT:
 - En markör i formatet [LÄNK: https://...] i texten är en EXAKT förextraherad koppling. Behandla den som AUKTORITATIV — gissa aldrig om.
@@ -3231,7 +3234,7 @@ function renderImportPreview(){
     const defaultForm=guessTrainingForm(p.primaryForm);
     const setOptions=formOptions.replace(`value="${defaultForm?.id}"`,`value="${defaultForm?.id}" selected`);
     const exList=(p.exercises||[]).map(e=>{
-      const setsReps=e.reps?`${e.sets}×${e.reps}`:(e.time?`${e.sets}× ${e.time} min`:`${e.sets} set`);
+      const setsReps=e.reps?`${e.sets}×${e.reps}`:(e.time?`${e.sets}× ${fmtMinSec(e.time)}`:`${e.sets} set`);
       const dist=e.distance?` · ${fmtNum(e.distance)} km`:'';
       const w=e.weight?` · ${fmtNum(e.weight)} kg`:'';
       const pz=e.pulseZone?` · Z${e.pulseZone}`:'';
@@ -4065,6 +4068,55 @@ function fmtNum(v){
   return String(n).replace('.',',');
 }
 
+// Tid: lagras som decimal minuter (1.8 = 1 min 48 sek), visas/skrivs som "mm:ss".
+// Konvertera decimal min → "1:48" för visning. 0/null → tom sträng.
+function fmtMinSec(decMin){
+  if(decMin==null||decMin===''||!Number.isFinite(Number(decMin))) return '';
+  const totalSec=Math.max(0,Math.round(Number(decMin)*60));
+  const m=Math.floor(totalSec/60);
+  const s=totalSec%60;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+// Parse "1:48" → 1.8 decimal min. Accepterar även decimal-form ("1.8", "1,8") eller bara minuter.
+function parseMinSec(str,fallback=0){
+  if(str==null||str==='') return fallback;
+  if(typeof str==='number') return Number.isFinite(str)?str:fallback;
+  const s=String(str).trim();
+  if(!s) return fallback;
+  if(s.includes(':')){
+    const parts=s.split(':');
+    const m=parseInt(parts[0],10)||0;
+    const sec=parseInt(parts[1],10)||0;
+    return m+sec/60;
+  }
+  // Fall tillbaka på decimal-tolkning ("1,8" / "1.8" / "108" sek-strikt nej, antar minuter)
+  return parseNum(s,fallback);
+}
+// Engångsmigrering: cardio-övningar där defaultDistance >= 100 antas vara meter — dela med 1000.
+// (Realistiska km-distanser är <= 50; sannolikheten för >= 100 km på en övning är försumbar.)
+function migrateCardioDistanceToKm(){
+  if(userProfile._cardioMigratedV1) return;
+  let exCount=0,setCount=0;
+  exercises.forEach(ex=>{
+    if((ex.primaryForm==='running'||ex.primaryForm==='cycling')&&ex.defaultDistance!=null&&ex.defaultDistance>=100){
+      ex.defaultDistance=ex.defaultDistance/1000;
+      exCount++;
+    }
+  });
+  workoutHistory.forEach(w=>{
+    (w.exercises||[]).forEach(ex=>{
+      if(ex.cat==='cardio'){
+        (ex.sets||[]).forEach(s=>{
+          if(s.w!=null&&Number(s.w)>=100){ s.w=Number(s.w)/1000; setCount++; }
+        });
+      }
+    });
+  });
+  userProfile._cardioMigratedV1=true;
+  saveState();
+  if(exCount||setCount) console.log(`[Cardio-migration] ${exCount} övningar + ${setCount} loggade set konverterade från meter till km.`);
+}
+
 // Radera moln-rader som inte längre finns lokalt (= användaren tog bort dem).
 // Utan detta "återföds" borttagna pass/övningar/mål vid refresh, eftersom sync bara gjorde upsert.
 async function deleteCloudOrphans(table,localIds,uid){
@@ -4363,6 +4415,7 @@ async function loadFromCloud(silent){
     migrateMergeStrengthForms();
     migrateBodyweightToStrength();
     migrateMobilityAreas();
+    migrateCardioDistanceToKm();
     ensureDefaultForms();
     saveState();
     // Nu har vi en färsk kopia av molnet → säkert att låta sync radera borttagna rader
@@ -5403,7 +5456,7 @@ function renderDetailExs(pass){
     const reps=ref.reps??ex.defaultReps;
     const pf=getPrimaryForm(ex);
     const isCardio=pf==='running'||pf==='cycling';
-    const repStr=isCardio?(reps>0?`${sets}× ${reps} min`:`${sets} varv`):(reps>0?`${sets}×${reps}`:`${sets} set`);
+    const repStr=isCardio?(reps>0?`${sets}× ${fmtMinSec(reps)}`:`${sets} varv`):(reps>0?`${sets}×${reps}`:`${sets} set`);
     const grad=isCardio?'cardio':pf==='bodyweight'?'bodyweight':pf==='mobility'?'mobility':'strength';
     const muscleTag=ex.muscle?`<span style="background:var(--surface-2);color:var(--text-2);font-size:10px;font-weight:700;padding:2px 7px;border-radius:var(--r-pill);flex-shrink:0">${ex.muscle}</span>`:'';
     const videoBtn=ex.videoUrl&&parseVideoUrl(ex.videoUrl)?`<button class="move-btn" onclick="event.stopPropagation();openVideoPlayer('${ex.id}')" title="Spela tutorial" style="background:rgba(91,82,240,0.1);border-color:var(--accent-4);color:var(--accent-4)"><i class="ti ti-player-play"></i></button>`:'';
@@ -5639,7 +5692,7 @@ function renderExercises(){
     }else if(pf==='running'||pf==='cycling'){
       const pz=ex.pulseZone?`Z${ex.pulseZone}`:'';
       const dist=ex.defaultDistance?`${fmtNum(ex.defaultDistance)} km`:'';
-      const time=ex.defaultTime?`${fmtNum(ex.defaultTime)} min`:'';
+      const time=ex.defaultTime?fmtMinSec(ex.defaultTime):'';
       const setsLabel=ex.defaultSets>1?`${ex.defaultSets}× `:'';
       meta=[pz,setsLabel+[dist,time].filter(Boolean).join(' · ')].filter(Boolean).join(' · ').trim();
       if(!meta) meta=pfInfo.label;
@@ -5786,8 +5839,8 @@ function openExerciseDetail(exId){
   }else if(pf==='running'||pf==='cycling'){
     document.getElementById('ex-f-pulse').value=ex.pulseZone||'';
     document.getElementById('ex-f-c-sets').value=ex.defaultSets||1;
-    document.getElementById('ex-f-c-dist').value=ex.defaultDistance||'';
-    document.getElementById('ex-f-c-time').value=ex.defaultTime||'';
+    document.getElementById('ex-f-c-dist').value=ex.defaultDistance!=null?fmtNum(ex.defaultDistance):'';
+    document.getElementById('ex-f-c-time').value=ex.defaultTime!=null?fmtMinSec(ex.defaultTime):'';
   }else if(pf==='mobility'){
     document.getElementById('ex-f-m-area').value=ex.muscle||MUSCLE_TAGS[0];
     document.getElementById('ex-f-m-sets').value=ex.defaultSets||3;
@@ -5838,7 +5891,7 @@ function saveExerciseEdit(){
     const dVal=document.getElementById('ex-f-c-dist').value.trim();
     defaultDistance=dVal===''?null:toNum(dVal);
     const tVal=document.getElementById('ex-f-c-time').value.trim();
-    defaultTime=tVal===''?null:toNum(tVal);
+    defaultTime=tVal===''?null:parseMinSec(tVal,null);
     subTags=Array.from(document.querySelectorAll('#ex-f-cardio-tags .filter-chip.active')).map(c=>c.getAttribute('data-tag'));
     formTags=['kondition'];
   }else if(pf==='mobility'){
@@ -5982,21 +6035,28 @@ function renderLogExs(){
         </div>
         <button onclick="rmLogEx(${ei})" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:14px;padding:4px"><i class="ti ti-x"></i></button>
       </div>
-      <div class="set-labels"><span>Set</span><span>${ex.cat==='cardio'?'Dist (km)':'Vikt (kg)'}</span><span>${ex.cat==='cardio'?'Tid (min)':'Reps'}</span><span></span></div>
+      <div class="set-labels"><span>Set</span><span>${ex.cat==='cardio'?'Dist (km)':'Vikt (kg)'}</span><span>${ex.cat==='cardio'?'Tid (m:s)':'Reps'}</span><span></span></div>
       ${ex.sets.map((s,si)=>{
-        const wStep=ex.cat==='cardio'?0.5:5;
-        const rStep=ex.cat==='cardio'?1:1;
+        const isC=ex.cat==='cardio';
+        const wStep=isC?0.1:5;
+        const rStep=isC?(1/6):1; // cardio-tid: ±10 sek (1/6 min)
+        const wVal=isC?fmtNum(s.w||''):s.w||'';
+        const rVal=isC?(s.r?fmtMinSec(s.r):''):s.r||'';
+        const wPh=isC?'0,4':'–';
+        const rPh=isC?'1:48':'–';
+        const wIM=isC?'decimal':'decimal';
+        const rIM=isC?'numeric':'decimal';
         return `
         <div class="set-row">
           <div class="set-num">${si+1}</div>
           <div class="set-stepper ${s.done?'done':''}">
             <button class="stepper-btn" onclick="stepS(${ei},${si},'w',${-wStep})">−</button>
-            <input type="number" value="${s.w||''}" placeholder="–" onchange="updS(${ei},${si},'w',this.value)" inputmode="decimal" step="${wStep}">
+            <input type="text" value="${wVal}" placeholder="${wPh}" onchange="updS(${ei},${si},'w',this.value)" inputmode="${wIM}" autocomplete="off">
             <button class="stepper-btn" onclick="stepS(${ei},${si},'w',${wStep})">+</button>
           </div>
           <div class="set-stepper ${s.done?'done':''}">
             <button class="stepper-btn" onclick="stepS(${ei},${si},'r',${-rStep})">−</button>
-            <input type="number" value="${s.r||''}" placeholder="–" onchange="updS(${ei},${si},'r',this.value)" inputmode="decimal" step="${rStep}">
+            <input type="text" value="${rVal}" placeholder="${rPh}" onchange="updS(${ei},${si},'r',this.value)" inputmode="${rIM}" autocomplete="off">
             <button class="stepper-btn" onclick="stepS(${ei},${si},'r',${rStep})">+</button>
           </div>
           <button class="set-check ${s.done?'done':''}" onclick="togS(${ei},${si})"><i class="ti ti-check"></i></button>
@@ -6006,10 +6066,25 @@ function renderLogExs(){
     </div>`).join('');
 }
 
-function updS(ei,si,k,v){loggedExs[ei].sets[si][k]=parseNum(v,0);}
+function updS(ei,si,k,v){
+  const ex=loggedExs[ei];
+  // Cardio-tid sparas som decimal min men användaren skriver "mm:ss"
+  if(k==='r'&&ex&&ex.cat==='cardio') loggedExs[ei].sets[si][k]=parseMinSec(v,0);
+  else loggedExs[ei].sets[si][k]=parseNum(v,0);
+}
 function stepS(ei,si,k,delta){
-  const cur=parseFloat(loggedExs[ei].sets[si][k])||0;
-  const next=Math.max(0,Math.round((cur+delta)*100)/100);
+  const ex=loggedExs[ei];
+  const cur=parseFloat(ex.sets[si][k])||0;
+  let next=cur+delta;
+  if(ex.cat==='cardio'&&k==='r'){
+    // Tid: runda till närmsta 10 sek = 1/6 min för att undvika drift
+    next=Math.max(0,Math.round(next*6)/6);
+  }else if(ex.cat==='cardio'&&k==='w'){
+    // Distans: runda till en decimal (0.1 km)
+    next=Math.max(0,Math.round(next*10)/10);
+  }else{
+    next=Math.max(0,Math.round(next*100)/100);
+  }
   loggedExs[ei].sets[si][k]=next;
   renderLogExs();
 }
@@ -7297,22 +7372,32 @@ function renderWorkoutDetail(){
   }else{
     exList.innerHTML=w.exercises.map((ex,exIdx)=>{
       const isCardio=ex.cat==='cardio';
-      const wLabel=isCardio?'Dist':'Vikt';
-      const rLabel=isCardio?'Tid':'Reps';
+      const wLabel=isCardio?'Dist (km)':'Vikt';
+      const rLabel=isCardio?'Tid (m:s)':'Reps';
       let setsHtml;
       if(workoutEditMode){
         setsHtml=`<div class="set-labels"><span>Set</span><span>${wLabel}</span><span>${rLabel}</span><span></span></div>`;
-        setsHtml+=(ex.sets||[]).map((s,si)=>`
+        setsHtml+=(ex.sets||[]).map((s,si)=>{
+          const wVal=isCardio?fmtNum(s.w||''):s.w||'';
+          const rVal=isCardio?(s.r?fmtMinSec(s.r):''):s.r||'';
+          const wPh=isCardio?'0,4':'–';
+          const rPh=isCardio?'1:48':'–';
+          return `
           <div class="set-row">
             <div class="set-num">${si+1}</div>
-            <input class="set-input ${s.done?'done':''}" type="number" value="${s.w||''}" placeholder="–" onchange="updWE(${exIdx},${si},'w',this.value)" step="${isCardio?'0.1':'2.5'}" inputmode="decimal">
-            <input class="set-input ${s.done?'done':''}" type="number" value="${s.r||''}" placeholder="–" onchange="updWE(${exIdx},${si},'r',this.value)" step="${isCardio?'0.5':'1'}" inputmode="decimal">
+            <input class="set-input ${s.done?'done':''}" type="text" value="${wVal}" placeholder="${wPh}" onchange="updWE(${exIdx},${si},'w',this.value)" inputmode="decimal" autocomplete="off">
+            <input class="set-input ${s.done?'done':''}" type="text" value="${rVal}" placeholder="${rPh}" onchange="updWE(${exIdx},${si},'r',this.value)" inputmode="${isCardio?'numeric':'decimal'}" autocomplete="off">
             <button class="set-check ${s.done?'done':''}" onclick="togWE(${exIdx},${si})"><i class="ti ti-check"></i></button>
-          </div>`).join('');
+          </div>`;
+        }).join('');
       }else{
         const sets=(ex.sets||[]).filter(s=>s.done||s.w||s.r);
+        const wUnit=isCardio?'km':'kg';
         setsHtml=sets.length?sets.map((s,si)=>{
-          return `<div style="display:grid;grid-template-columns:24px 1fr 1fr 24px;gap:6px;font-size:12px;padding:4px 0;align-items:center"><div style="color:var(--text-3);font-weight:700;text-align:center">${si+1}</div><div style="text-align:center"><span style="font-weight:700">${s.w?fmtNum(s.w):'–'}</span> <span style="color:var(--text-3);font-size:10px">${wLabel.toLowerCase()}</span></div><div style="text-align:center"><span style="font-weight:700">${s.r?fmtNum(s.r):'–'}</span> <span style="color:var(--text-3);font-size:10px">${rLabel.toLowerCase()}</span></div><div style="text-align:center;color:${s.done?'var(--accent-3)':'var(--text-3)'}">${s.done?'<i class="ti ti-check"></i>':'–'}</div></div>`;
+          const wShow=s.w?(isCardio?fmtNum(s.w):fmtNum(s.w)):'–';
+          const rShow=s.r?(isCardio?fmtMinSec(s.r):fmtNum(s.r)):'–';
+          const rUnit=isCardio?'':(rLabel.toLowerCase());
+          return `<div style="display:grid;grid-template-columns:24px 1fr 1fr 24px;gap:6px;font-size:12px;padding:4px 0;align-items:center"><div style="color:var(--text-3);font-weight:700;text-align:center">${si+1}</div><div style="text-align:center"><span style="font-weight:700">${wShow}</span> <span style="color:var(--text-3);font-size:10px">${wUnit}</span></div><div style="text-align:center"><span style="font-weight:700">${rShow}</span> <span style="color:var(--text-3);font-size:10px">${rUnit}</span></div><div style="text-align:center;color:${s.done?'var(--accent-3)':'var(--text-3)'}">${s.done?'<i class="ti ti-check"></i>':'–'}</div></div>`;
         }).join(''):'<div style="font-size:12px;color:var(--text-3);padding:6px 0">Inga set registrerade</div>';
       }
       // Hitta tutorial-video: först via exId (säkrast), annars fallback via namn (för historiska pass innan vi sparade exId)
@@ -7368,9 +7453,12 @@ function setWorkoutEditFeel(n){
 function updWE(exIdx,setIdx,key,val){
   const w=workoutHistory.find(x=>x.id===currentWorkoutDetailId);
   if(!w) return;
-  const s=w.exercises?.[exIdx]?.sets?.[setIdx];
+  const ex=w.exercises?.[exIdx];
+  const s=ex?.sets?.[setIdx];
   if(!s) return;
-  s[key]=parseNum(val,0);
+  // Cardio-tid skrivs som "mm:ss" men sparas som decimal min
+  if(key==='r'&&ex&&ex.cat==='cardio') s[key]=parseMinSec(val,0);
+  else s[key]=parseNum(val,0);
 }
 
 function togWE(exIdx,setIdx){
@@ -7829,6 +7917,7 @@ migrateExercisesToPrimaryForm();
 migrateMergeStrengthForms();
 migrateBodyweightToStrength();
 migrateMobilityAreas();
+migrateCardioDistanceToKm();
 ensureDefaultForms();
 migrateGoalsAddIds();
 saveState();
