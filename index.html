@@ -584,6 +584,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <span id="hist-vol-detail">Volym styrka: – kg · Volym kondition: – km</span>
     </div>
   </div>
+  <div class="section-title" style="padding:0 2px;display:flex;align-items:center;gap:8px">
+    Mina rutiner
+    <span style="font-size:10px;color:var(--text-3);font-weight:400;text-transform:none">(tryck för att logga)</span>
+  </div>
+  <div class="card" style="padding:10px 12px">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+      <button class="cal-nav-btn" onclick="changeRoutineDay(-1)"><i class="ti ti-chevron-left"></i></button>
+      <div id="rt-day-label" style="flex:1;text-align:center;font-size:12px;font-weight:700"></div>
+      <button class="cal-nav-btn" onclick="changeRoutineDay(1)" id="rt-day-next-btn"><i class="ti ti-chevron-right"></i></button>
+    </div>
+    <div id="rt-rows" style="display:flex;flex-direction:column;gap:6px"></div>
+  </div>
   <div class="section-title" style="padding:0 2px">Veckans pass</div>
   <div id="hist-workout-list" style="display:flex;flex-direction:column;gap:6px"></div>
 </div>
@@ -641,6 +653,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="section-head"><div class="section-title">Mål &amp; delmål</div></div>
   <div id="goals-list" style="display:flex;flex-direction:column;gap:7px"></div>
   <button class="btn-ghost" onclick="openNewGoal()"><i class="ti ti-target"></i> Nytt mål</button>
+  <div class="section-head" style="margin-top:4px"><div class="section-title">Mina rutiner</div></div>
+  <div style="font-size:11px;color:var(--text-3);line-height:1.5;padding:0 2px 6px">5 fasta rutiner (Sömn, Kost, Träning, Skärmtid, Studier) loggas automatiskt. Du kan lägga till upp till 5 egna.</div>
+  <div id="custom-routines-list" style="display:flex;flex-direction:column;gap:6px"></div>
+  <button class="btn-ghost" onclick="openNewRoutine()" id="add-routine-btn"><i class="ti ti-plus"></i> Lägg till egen rutin</button>
   <div class="section-head" style="margin-top:4px"><div class="section-title">Tema</div></div>
   <button onclick="toggleTheme()" id="theme-btn" class="card" style="display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;width:100%;border:0.5px solid var(--border);background:var(--surface);color:var(--text-1);font-family:inherit;text-align:left">
     <i class="ti ti-moon" id="theme-icon" style="font-size:20px;color:var(--accent-4)"></i>
@@ -901,6 +917,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div style="display:flex;gap:8px">
         <button class="btn-primary" onclick="confirmImportShare()" style="flex:1" id="ish-btn"><i class="ti ti-download"></i> Hämta delning</button>
         <button class="btn-ghost" onclick="closeModal('m-import-share')">Avbryt</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="m-edit-routine" onclick="closeBg(event,'m-edit-routine')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title" id="rt-modal-title">Ny rutin</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label class="field-label">Namn</label>
+        <input class="field-input" id="rt-f-label" placeholder="T.ex. Meditation, Stretch, Vatten...">
+      </div>
+      <div>
+        <label class="field-label">Ikon (frivilligt — emoji)</label>
+        <input class="field-input" id="rt-f-icon" placeholder="🧘" maxlength="4">
+        <div style="font-size:10px;color:var(--text-3);margin-top:4px">Förslag: 🧘 🚶 💧 📖 🎯 ☀️ 🌙 🥗 ☕ 🏃</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="saveCustomRoutine()" style="flex:1"><i class="ti ti-check"></i> Spara</button>
+        <button class="btn-ghost" id="rt-delete-btn" onclick="deleteCustomRoutine()" style="background:#e8200a11;color:#e8200a;border-color:#e8200a44;display:none"><i class="ti ti-trash"></i></button>
+        <button class="btn-ghost" onclick="closeModal('m-edit-routine')">Avbryt</button>
       </div>
     </div>
   </div>
@@ -1447,7 +1485,8 @@ let pendingLevel=null;
 const LEVEL_OPTIONS=[
   {id:'beginner',label:'Nybörjare'},
   {id:'intermediate',label:'Mellannivå'},
-  {id:'advanced',label:'Avancerad'}
+  {id:'advanced',label:'Avancerad'},
+  {id:'elite',label:'Elit'}
 ];
 
 // Beräkna ålder (hela år) från ISO-födelsedatum
@@ -1513,7 +1552,7 @@ function renderProfileInfo(){
   if(userProfile.heightCm) parts.push(`${userProfile.heightCm} cm`);
   const infoEl=document.getElementById('profile-info');
   if(infoEl) infoEl.textContent=parts.length?parts.join(' · '):'Fyll i din profil';
-  const levelMap={beginner:'Nybörjare',intermediate:'Mellannivå',advanced:'Avancerad'};
+  const levelMap={beginner:'Nybörjare',intermediate:'Mellannivå',advanced:'Avancerad',elite:'Elit'};
   const levelEl=document.getElementById('profile-level');
   if(levelEl) levelEl.textContent=levelMap[userProfile.level||'beginner']||'Nybörjare';
   const passEl=document.getElementById('profile-passcount');
@@ -4156,6 +4195,28 @@ async function syncToCloud(silent){
       if(error) console.warn('Goals sync failed (kör supabase-schema-v2.sql om kolumner saknas):',error);
     }
     if(!silent && cloudLoadComplete) await deleteCloudOrphans('user_goals',userGoals.map(g=>g.id),uid);
+    // Steg 5c: Push custom routines (egna rutiner, 1-5 st)
+    if(customRoutines.length){
+      const {error}=await supa.from('routines').upsert(customRoutines.map(r=>({
+        id:r.id,user_id:uid,label:r.label,icon:r.icon||null,
+        sort_order:toInt(r.sortOrder,0),archived:!!r.archived
+      })));
+      if(error) console.warn('Routines sync failed (kör supabase-migrations.sql om tabell saknas):',error);
+    }
+    if(!silent && cloudLoadComplete) await deleteCloudOrphans('routines',customRoutines.map(r=>r.id),uid);
+    // Steg 5d: Push routine_logs
+    // routineLogs är ett dict {date:{key:score}} — platta ut till rader
+    const rlRows=[];
+    for(const date of Object.keys(routineLogs||{})){
+      for(const key of Object.keys(routineLogs[date]||{})){
+        const score=routineLogs[date][key];
+        if(score>=1&&score<=4) rlRows.push({user_id:uid,date,routine_key:key,score});
+      }
+    }
+    if(rlRows.length){
+      const {error}=await supa.from('routine_logs').upsert(rlRows,{onConflict:'user_id,date,routine_key'});
+      if(error) console.warn('Routine logs sync failed (kör supabase-migrations.sql om tabell saknas):',error);
+    }
     // Steg 6: Push workout_history
     if(workoutHistory.length){
       const {error}=await supa.from('workout_history').upsert(workoutHistory.map(w=>({
@@ -4200,14 +4261,16 @@ async function loadFromCloud(silent){
   // Skyddsnät om molnet skulle vara ofullständigt — kan återställas via "Återställ senaste auto-backup".
   saveAutoBackup();
   try{
-    const [tfRes,exRes,ptRes,pwRes,whRes,prRes,ugRes]=await Promise.all([
+    const [tfRes,exRes,ptRes,pwRes,whRes,prRes,ugRes,rtRes,rlRes]=await Promise.all([
       supa.from('training_forms').select('*'),
       supa.from('exercises').select('*'),
       supa.from('pass_types').select('*'),
       supa.from('planned_workouts').select('*'),
       supa.from('workout_history').select('*').order('performed_at',{ascending:false}),
       supa.from('profiles').select('*').eq('id',currentUser.id).maybeSingle(),
-      supa.from('user_goals').select('*')
+      supa.from('user_goals').select('*'),
+      supa.from('routines').select('*'),
+      supa.from('routine_logs').select('*')
     ]);
     // Robusthet: om en KRITISK tabell-hämtning failade, avbryt INNAN vi skriver över lokal data.
     // (Annars riskerar vi att ersätta bra lokal data med ofullständigt moln.)
@@ -4279,6 +4342,21 @@ async function loadFromCloud(silent){
       id:w.id,passName:w.pass_name,formName:w.form_name,formCat:w.form_cat,
       date:w.performed_at,duration:w.duration_seconds,feel:w.feel,note:w.note,exercises:w.exercises||[]
     }));
+    // Egna rutiner (kostnader för 1-5 user-defined routines)
+    if(rtRes&&Array.isArray(rtRes.data)){
+      customRoutines=rtRes.data.map(r=>({
+        id:r.id, label:r.label, icon:r.icon||'⭐',
+        sortOrder:r.sort_order||0, archived:!!r.archived
+      }));
+    }
+    // Rutin-loggar — rebuilda routineLogs-objektet { date: { key: score } }
+    if(rlRes&&Array.isArray(rlRes.data)){
+      routineLogs={};
+      rlRes.data.forEach(rl=>{
+        if(!routineLogs[rl.date]) routineLogs[rl.date]={};
+        routineLogs[rl.date][rl.routine_key]=rl.score;
+      });
+    }
     // Migrera klassificering även på moln-data (efter att pass + planerade pass byggts)
     migrateMergeStrengthForms();
     migrateBodyweightToStrength();
@@ -4702,13 +4780,219 @@ let dayModalDate=null;
 // Atletens profil (för "egen vikt"-övningar etc) — koppling till editerbar profil kommer senare
 let userProfile={name:'Erik',weightKg:82,heightCm:183,age:42,birthDate:null};
 
+/* ========== RUTINER (Min logg) ========== */
+// 5 fasta system-rutiner. Lever som konstanter i appen, syncas EJ som rader till routines-tabellen.
+// Bara routine_logs har en routine_key = någon av dessa, eller UUID till en custom-rutin.
+const SYSTEM_ROUTINES=[
+  {key:'sleep',    label:'Sömn',     icon:'💤', desc:'Jag gick och la mig när jag skulle och har sovit bra'},
+  {key:'food',     label:'Kost',     icon:'🥗', desc:'Jag har ätit bra'},
+  {key:'training', label:'Träning',  icon:'💪', desc:'Jag har tränat enligt plan'},
+  {key:'screen',   label:'Skärmtid', icon:'📱', desc:'Jag har balanserad skärmtid'},
+  {key:'studies',  label:'Studier',  icon:'📚', desc:'Jag har studerat bra och följt tidsplanen'}
+];
+const SYSTEM_ROUTINE_KEYS=new Set(SYSTEM_ROUTINES.map(r=>r.key));
+const ROUTINE_SCORES=[
+  {val:1, label:'Dåligt',     short:'Då.', color:'#e8200a'},
+  {val:2, label:'Ok',          short:'Ok',  color:'#b96b00'},
+  {val:3, label:'Bra',         short:'Bra', color:'#22a852'},
+  {val:4, label:'Mycket bra',  short:'M.B.',color:'#0d7333'}
+];
+const ROUTINE_MAX=5; // antal egna rutiner som tillåts
+let customRoutines=[]; // [{id, label, icon, sortOrder, archived}]
+// Lagras som { 'YYYY-MM-DD': { 'sleep':3, 'food':2, '<uuid>':4 } }
+let routineLogs={};
+
+// Vilken dag som visas i rutin-loggen — null = idag, annars YYYY-MM-DD
+let rtSelectedDate=null;
+function rtCurrentDate(){ return rtSelectedDate||todayIso(); }
+function rtFormatLabel(iso){
+  const d=new Date(iso+'T00:00:00');
+  const today=new Date(); today.setHours(0,0,0,0);
+  const diff=Math.round((d-today)/86400000);
+  if(diff===0) return 'Idag · '+SWE_DAYS_SHORT[d.getDay()]+' '+d.getDate()+'/'+(d.getMonth()+1);
+  if(diff===-1) return 'Igår · '+SWE_DAYS_SHORT[d.getDay()]+' '+d.getDate()+'/'+(d.getMonth()+1);
+  return SWE_DAYS_SHORT[d.getDay()]+' '+d.getDate()+'/'+(d.getMonth()+1);
+}
+function changeRoutineDay(dir){
+  const cur=rtCurrentDate();
+  const d=new Date(cur+'T00:00:00'); d.setDate(d.getDate()+dir);
+  rtSelectedDate=isoDate(d);
+  renderRoutineDay();
+}
+function renderRoutineDay(){
+  const dateStr=rtCurrentDate();
+  const labelEl=document.getElementById('rt-day-label');
+  if(labelEl) labelEl.textContent=rtFormatLabel(dateStr);
+  // Inaktivera framåt-knappen om vi redan är på idag (kan inte logga framtid)
+  const today=todayIso();
+  const nextBtn=document.getElementById('rt-day-next-btn');
+  if(nextBtn) nextBtn.disabled=dateStr>=today;
+  const rows=document.getElementById('rt-rows');
+  if(!rows) return;
+  const list=activeRoutines();
+  if(!list.length){ rows.innerHTML='<div style="font-size:11px;color:var(--text-3);padding:6px 0">Inga rutiner ännu.</div>'; return; }
+  rows.innerHTML=list.map(r=>{
+    const score=getRoutineScore(dateStr,r.key);
+    const chips=ROUTINE_SCORES.map(s=>{
+      const active=score===s.val;
+      return `<button onclick="onRoutineChipTap('${dateStr}','${r.key}',${s.val})" title="${escapeHtml(s.label)}"
+        style="flex:1;padding:6px 4px;border-radius:8px;border:1px solid ${active?s.color:'var(--border)'};
+               background:${active?s.color:'transparent'};color:${active?'#fff':'var(--text-2)'};
+               font-size:11px;font-weight:700;cursor:pointer;transition:transform 0.08s">${s.short}</button>`;
+    }).join('');
+    return `<div style="display:flex;align-items:center;gap:8px">
+      <div style="flex:0 0 110px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px">
+        <span style="font-size:14px">${r.icon||'⭐'}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.label)}</span>
+      </div>
+      <div style="flex:1;display:flex;gap:4px">${chips}</div>
+    </div>`;
+  }).join('');
+}
+function onRoutineChipTap(date,key,score){
+  // Toggle: tryck igen på samma chip → rensa
+  const cur=getRoutineScore(date,key);
+  setRoutineScore(date,key,cur===score?0:score);
+  renderRoutineDay();
+}
+
+/* ========== EGNA RUTINER (CRUD i Profil) ========== */
+let editingRoutineId=null;
+function renderCustomRoutines(){
+  const el=document.getElementById('custom-routines-list');
+  if(!el) return;
+  const list=(customRoutines||[]).filter(r=>!r.archived).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+  if(!list.length){
+    el.innerHTML='<div style="font-size:11px;color:var(--text-3);padding:6px 2px">Inga egna rutiner ännu — tryck "Lägg till" nedan.</div>';
+  }else{
+    el.innerHTML=list.map(r=>`
+      <div class="card" style="display:flex;align-items:center;gap:10px;padding:9px 11px;cursor:pointer" onclick="openEditRoutine('${r.id}')">
+        <span style="font-size:18px">${escapeHtml(r.icon||'⭐')}</span>
+        <span style="flex:1;font-size:13px;font-weight:700">${escapeHtml(r.label)}</span>
+        <i class="ti ti-edit" style="color:var(--text-3);font-size:16px"></i>
+      </div>
+    `).join('');
+  }
+  // Inaktivera "Lägg till"-knappen om max nått
+  const addBtn=document.getElementById('add-routine-btn');
+  if(addBtn){
+    if(list.length>=ROUTINE_MAX){
+      addBtn.disabled=true;
+      addBtn.innerHTML='<i class="ti ti-plus"></i> Max '+ROUTINE_MAX+' egna rutiner';
+      addBtn.style.opacity='0.5';
+    }else{
+      addBtn.disabled=false;
+      addBtn.innerHTML='<i class="ti ti-plus"></i> Lägg till egen rutin';
+      addBtn.style.opacity='1';
+    }
+  }
+}
+function openNewRoutine(){
+  const activeCount=(customRoutines||[]).filter(r=>!r.archived).length;
+  if(activeCount>=ROUTINE_MAX){ alert('Max '+ROUTINE_MAX+' egna rutiner — ta bort en för att lägga till en ny.'); return; }
+  editingRoutineId=null;
+  document.getElementById('rt-modal-title').textContent='Ny rutin';
+  document.getElementById('rt-f-label').value='';
+  document.getElementById('rt-f-icon').value='';
+  document.getElementById('rt-delete-btn').style.display='none';
+  openModal('m-edit-routine');
+}
+function openEditRoutine(id){
+  const r=(customRoutines||[]).find(x=>x.id===id);
+  if(!r) return;
+  editingRoutineId=id;
+  document.getElementById('rt-modal-title').textContent='Redigera rutin';
+  document.getElementById('rt-f-label').value=r.label||'';
+  document.getElementById('rt-f-icon').value=r.icon||'';
+  document.getElementById('rt-delete-btn').style.display='';
+  openModal('m-edit-routine');
+}
+function saveCustomRoutine(){
+  const label=document.getElementById('rt-f-label').value.trim();
+  const icon=document.getElementById('rt-f-icon').value.trim()||'⭐';
+  if(!label){ alert('Skriv ett namn för rutinen'); return; }
+  if(editingRoutineId){
+    const r=customRoutines.find(x=>x.id===editingRoutineId);
+    if(r){ r.label=label; r.icon=icon; }
+  }else{
+    const maxOrder=(customRoutines||[]).reduce((m,r)=>Math.max(m,r.sortOrder||0),0);
+    customRoutines.push({
+      id:crypto.randomUUID(),
+      label,icon,sortOrder:maxOrder+1,archived:false
+    });
+  }
+  saveState();
+  closeModal('m-edit-routine');
+  renderCustomRoutines();
+  renderRoutineDay();
+}
+async function deleteCustomRoutine(){
+  if(!editingRoutineId) return;
+  const r=customRoutines.find(x=>x.id===editingRoutineId);
+  if(!r) return;
+  if(!confirm(`Ta bort rutinen "${r.label}"?\n\nDina hittills loggade poäng för denna rutin försvinner också.`)) return;
+  // Ta bort från lokala arrayen
+  customRoutines=customRoutines.filter(x=>x.id!==r.id);
+  // Ta bort alla rutinloggar för denna nyckel
+  for(const date of Object.keys(routineLogs)){
+    if(routineLogs[date][r.id]!=null){
+      delete routineLogs[date][r.id];
+      if(!Object.keys(routineLogs[date]).length) delete routineLogs[date];
+    }
+  }
+  saveState();
+  // Radera molnraderna direkt (autosync deletar inte själv pga race-skydd)
+  if(supa&&currentUser){
+    const uid=currentUser.id;
+    try{
+      await supa.from('routines').delete().eq('user_id',uid).eq('id',r.id);
+      await supa.from('routine_logs').delete().eq('user_id',uid).eq('routine_key',r.id);
+    }catch(e){ console.warn('Cloud delete misslyckades:',e.message); }
+  }
+  closeModal('m-edit-routine');
+  renderCustomRoutines();
+  renderRoutineDay();
+}
+
+// Skicka enskild rutin-log-uppdatering till molnet utan att vänta på debounced sync.
+// Score 0/null/undefined = ta bort raden. Annars upsert.
+async function syncRoutineLogToCloud(date,key,score){
+  if(!supa||!currentUser) return;
+  try{
+    const uid=currentUser.id;
+    if(!score){
+      await supa.from('routine_logs').delete().eq('user_id',uid).eq('date',date).eq('routine_key',key);
+    }else{
+      await supa.from('routine_logs').upsert({user_id:uid,date,routine_key:key,score},{onConflict:'user_id,date,routine_key'});
+    }
+  }catch(e){ console.warn('Routine log sync failed:',e.message); }
+}
+
+function activeRoutines(){
+  const sys=SYSTEM_ROUTINES.map(r=>({...r,system:true,id:r.key}));
+  const custom=(customRoutines||[]).filter(r=>!r.archived).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0))
+    .map(r=>({key:r.id, label:r.label, icon:r.icon||'⭐', id:r.id, system:false}));
+  return [...sys,...custom];
+}
+function getRoutineScore(date,key){ return routineLogs[date]?.[key]||0; }
+function setRoutineScore(date,key,score){
+  if(!routineLogs[date]) routineLogs[date]={};
+  if(score===0||score==null){ delete routineLogs[date][key]; if(!Object.keys(routineLogs[date]).length) delete routineLogs[date]; }
+  else routineLogs[date][key]=score;
+  saveState();
+  // Push enskild log-uppdatering till molnet direkt (snabbare än att vänta på debounced sync)
+  syncRoutineLogToCloud(date,key,score);
+}
+
 /* ========== STORAGE ========== */
 const STORAGE_KEY='alpinfys_v2';
 const STORAGE_KEY_LEGACY='alpinfys_v1';
 function saveState(){
   try{
     localStorage.setItem(STORAGE_KEY,JSON.stringify({
-      trainingForms,userGoals,workoutHistory,exercises,plannedWorkouts,userProfile,theme:currentTheme,v:2
+      trainingForms,userGoals,workoutHistory,exercises,plannedWorkouts,userProfile,
+      customRoutines,routineLogs,
+      theme:currentTheme,v:2
     }));
   }catch(e){console.warn('Save failed:',e);}
   // Auto-sync till molnet (debounced, tyst i bakgrunden)
@@ -4735,6 +5019,8 @@ function loadState(){
     if(Array.isArray(s.exercises)) exercises=s.exercises;
     if(Array.isArray(s.plannedWorkouts)) plannedWorkouts=s.plannedWorkouts;
     if(s.userProfile&&typeof s.userProfile==='object') userProfile={...userProfile,...s.userProfile};
+    if(Array.isArray(s.customRoutines)) customRoutines=s.customRoutines;
+    if(s.routineLogs&&typeof s.routineLogs==='object') routineLogs=s.routineLogs;
     if(s.theme){
       currentTheme=s.theme;
       document.getElementById('app').setAttribute('data-theme',currentTheme);
@@ -4771,7 +5057,7 @@ function navigate(id){
   if(id==='page-log') renderLogPassList();
   if(id==='page-history') renderHistory();
   if(id==='page-coach') renderCoach();
-  if(id==='page-profile'){renderProfileInfo();renderLastSync();renderGoals();}
+  if(id==='page-profile'){renderProfileInfo();renderLastSync();renderGoals();renderCustomRoutines();}
   window.scrollTo(0,0);
 }
 
@@ -7213,6 +7499,7 @@ function classifyWeekVolume(weekStats){
 }
 
 function renderHistory(){
+  renderRoutineDay();
   const monday=currentHistoryWeek;
   const sunday=new Date(monday.getFullYear(),monday.getMonth(),monday.getDate()+6);
   const wk=getWeekNumber(monday);

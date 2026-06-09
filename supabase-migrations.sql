@@ -243,6 +243,43 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
 
+-- ------------------------------------------------------------
+-- 11. ROUTINES + ROUTINE_LOGS (rutin-tracking i Min logg)
+-- ------------------------------------------------------------
+-- Egna rutiner (1-5 st) — de 5 fasta (Sömn/Kost/Träning/Skärmtid/Studier) lever som
+-- konstanter i appen och syncas INTE som rader här. Bara dina egna routine_logs har
+-- en system-key (sleep/food/training/screen/studies) eller en custom routine_id.
+create table if not exists public.routines (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  label text not null,
+  icon text,
+  sort_order int default 0,
+  archived boolean default false,
+  created_at timestamptz default now()
+);
+create index if not exists routines_user_id_idx on public.routines(user_id);
+alter table public.routines enable row level security;
+drop policy if exists routines_own on public.routines;
+create policy routines_own on public.routines for all using (user_id = auth.uid());
+
+-- Daglig score 1-4 per rutin. routine_key = 'sleep'|'food'|'training'|'screen'|'studies'
+-- för system-rutiner, eller UUID-string för en egen rutin.
+create table if not exists public.routine_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  date date not null,
+  routine_key text not null,
+  score int not null check (score between 1 and 4),
+  notes text,
+  updated_at timestamptz default now(),
+  unique (user_id, date, routine_key)
+);
+create index if not exists routine_logs_user_date_idx on public.routine_logs(user_id, date);
+alter table public.routine_logs enable row level security;
+drop policy if exists routine_logs_own on public.routine_logs;
+create policy routine_logs_own on public.routine_logs for all using (user_id = auth.uid());
+
 -- ============================================================
 -- Ladda om PostgREST schema-cache (så nya kolumner syns direkt)
 -- ============================================================
