@@ -584,17 +584,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <span id="hist-vol-detail">Volym styrka: – kg · Volym kondition: – km</span>
     </div>
   </div>
-  <div class="section-title" style="padding:0 2px;display:flex;align-items:center;gap:8px">
-    Mina rutiner
-    <span style="font-size:10px;color:var(--text-3);font-weight:400;text-transform:none">(tryck för att logga)</span>
-  </div>
+  <div class="section-title" style="padding:0 2px">Mina rutiner</div>
+  <div style="font-size:12px;color:var(--text-2);line-height:1.5;padding:0 2px 4px">Hur väl har jag följt mina rutiner idag? Tryck på 😞 😐 🙂 🤩 för att rata varje rutin. Tryck på rutinens namn för beskrivning.</div>
   <div class="card" style="padding:10px 12px">
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
       <button class="cal-nav-btn" onclick="changeRoutineDay(-1)"><i class="ti ti-chevron-left"></i></button>
       <div id="rt-day-label" style="flex:1;text-align:center;font-size:12px;font-weight:700"></div>
       <button class="cal-nav-btn" onclick="changeRoutineDay(1)" id="rt-day-next-btn"><i class="ti ti-chevron-right"></i></button>
     </div>
-    <div id="rt-rows" style="display:flex;flex-direction:column;gap:6px"></div>
+    <div id="rt-rows" style="display:flex;flex-direction:column;gap:8px"></div>
   </div>
   <div class="section-title" style="padding:0 2px">Veckans pass</div>
   <div id="hist-workout-list" style="display:flex;flex-direction:column;gap:6px"></div>
@@ -933,7 +931,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div>
         <label class="field-label">Ikon (frivilligt — emoji)</label>
         <input class="field-input" id="rt-f-icon" placeholder="🧘" maxlength="4">
-        <div style="font-size:10px;color:var(--text-3);margin-top:4px">Förslag: 🧘 🚶 💧 📖 🎯 ☀️ 🌙 🥗 ☕ 🏃</div>
+        <div style="font-size:10px;color:var(--text-3);margin-top:4px">Förslag: 🧘 🚶 💧 📖 🎯 ☀️ 🌙 📚 ☕ 🏃</div>
+      </div>
+      <div>
+        <label class="field-label">Beskrivning <span style="color:var(--text-3);font-weight:400;font-size:10px">(frivilligt — visas vid info-tryck)</span></label>
+        <textarea class="field-input" id="rt-f-desc" rows="2" placeholder='T.ex. "Jag har studerat bra och följt tidsplanen"' style="resize:vertical;min-height:48px;font-family:inherit"></textarea>
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn-primary" onclick="saveCustomRoutine()" style="flex:1"><i class="ti ti-check"></i> Spara</button>
@@ -4198,7 +4200,7 @@ async function syncToCloud(silent){
     // Steg 5c: Push custom routines (egna rutiner, 1-5 st)
     if(customRoutines.length){
       const {error}=await supa.from('routines').upsert(customRoutines.map(r=>({
-        id:r.id,user_id:uid,label:r.label,icon:r.icon||null,
+        id:r.id,user_id:uid,label:r.label,icon:r.icon||null,description:r.desc||null,
         sort_order:toInt(r.sortOrder,0),archived:!!r.archived
       })));
       if(error) console.warn('Routines sync failed (kör supabase-migrations.sql om tabell saknas):',error);
@@ -4342,10 +4344,10 @@ async function loadFromCloud(silent){
       id:w.id,passName:w.pass_name,formName:w.form_name,formCat:w.form_cat,
       date:w.performed_at,duration:w.duration_seconds,feel:w.feel,note:w.note,exercises:w.exercises||[]
     }));
-    // Egna rutiner (kostnader för 1-5 user-defined routines)
+    // Egna rutiner (1-5 user-defined routines)
     if(rtRes&&Array.isArray(rtRes.data)){
       customRoutines=rtRes.data.map(r=>({
-        id:r.id, label:r.label, icon:r.icon||'⭐',
+        id:r.id, label:r.label, icon:r.icon||'⭐', desc:r.description||'',
         sortOrder:r.sort_order||0, archived:!!r.archived
       }));
     }
@@ -4785,17 +4787,17 @@ let userProfile={name:'Erik',weightKg:82,heightCm:183,age:42,birthDate:null};
 // Bara routine_logs har en routine_key = någon av dessa, eller UUID till en custom-rutin.
 const SYSTEM_ROUTINES=[
   {key:'sleep',    label:'Sömn',     icon:'💤', desc:'Jag gick och la mig när jag skulle och har sovit bra'},
-  {key:'food',     label:'Kost',     icon:'🥗', desc:'Jag har ätit bra'},
-  {key:'training', label:'Träning',  icon:'💪', desc:'Jag har tränat enligt plan'},
-  {key:'screen',   label:'Skärmtid', icon:'📱', desc:'Jag har balanserad skärmtid'},
-  {key:'studies',  label:'Studier',  icon:'📚', desc:'Jag har studerat bra och följt tidsplanen'}
+  {key:'food',     label:'Kost',     icon:'🥗', desc:'Jag har ätit bra och hållit balanserade måltider'},
+  {key:'training', label:'Träning',  icon:'💪', desc:'Jag har tränat enligt plan (eller respekterat vilodagen)'},
+  {key:'screen',   label:'Skärmtid', icon:'📱', desc:'Jag har haft balanserad skärmtid och inte distraherats'},
+  {key:'schedule', label:'Schema',   icon:'📅', desc:'Jag har följt min planerade dag (uppstigning, måltider, läggning) i tid'}
 ];
 const SYSTEM_ROUTINE_KEYS=new Set(SYSTEM_ROUTINES.map(r=>r.key));
 const ROUTINE_SCORES=[
-  {val:1, label:'Dåligt',     short:'Då.', color:'#e8200a'},
-  {val:2, label:'Ok',          short:'Ok',  color:'#b96b00'},
-  {val:3, label:'Bra',         short:'Bra', color:'#22a852'},
-  {val:4, label:'Mycket bra',  short:'M.B.',color:'#0d7333'}
+  {val:1, label:'Dåligt',     emoji:'😞', color:'#e8200a'},
+  {val:2, label:'Ok',         emoji:'😐', color:'#b96b00'},
+  {val:3, label:'Bra',        emoji:'🙂', color:'#22a852'},
+  {val:4, label:'Mycket bra', emoji:'🤩', color:'#0d7333'}
 ];
 const ROUTINE_MAX=5; // antal egna rutiner som tillåts
 let customRoutines=[]; // [{id, label, icon, sortOrder, archived}]
@@ -4835,19 +4837,30 @@ function renderRoutineDay(){
     const score=getRoutineScore(dateStr,r.key);
     const chips=ROUTINE_SCORES.map(s=>{
       const active=score===s.val;
-      return `<button onclick="onRoutineChipTap('${dateStr}','${r.key}',${s.val})" title="${escapeHtml(s.label)}"
-        style="flex:1;padding:6px 4px;border-radius:8px;border:1px solid ${active?s.color:'var(--border)'};
-               background:${active?s.color:'transparent'};color:${active?'#fff':'var(--text-2)'};
-               font-size:11px;font-weight:700;cursor:pointer;transition:transform 0.08s">${s.short}</button>`;
+      return `<button onclick="onRoutineChipTap('${dateStr}','${r.key}',${s.val})" title="${escapeHtml(s.label)}" aria-label="${escapeHtml(s.label)}"
+        style="flex:1;padding:6px 4px;border-radius:8px;border:1.5px solid ${active?s.color:'var(--border)'};
+               background:${active?s.color+'22':'transparent'};
+               font-size:20px;cursor:pointer;line-height:1;transition:transform 0.08s">${s.emoji}</button>`;
     }).join('');
+    const hasDesc=!!(r.desc||'').trim();
+    const infoIcon=hasDesc?`<i class="ti ti-info-circle" style="font-size:11px;color:var(--text-3)"></i>`:'';
+    const titleAttr=hasDesc?`title="${escapeHtml(r.desc)}"`:'';
+    const clickHandler=hasDesc?`onclick="showRoutineInfo('${r.key}')"`:'';
     return `<div style="display:flex;align-items:center;gap:8px">
-      <div style="flex:0 0 110px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px">
-        <span style="font-size:14px">${r.icon||'⭐'}</span>
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.label)}</span>
+      <div ${clickHandler} ${titleAttr} style="flex:0 0 115px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px;${hasDesc?'cursor:pointer':''}">
+        <span style="font-size:15px">${r.icon||'⭐'}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${escapeHtml(r.label)}</span>
+        ${infoIcon}
       </div>
       <div style="flex:1;display:flex;gap:4px">${chips}</div>
     </div>`;
   }).join('');
+}
+
+function showRoutineInfo(key){
+  const r=SYSTEM_ROUTINES.find(x=>x.key===key)||(customRoutines||[]).find(x=>x.id===key);
+  if(!r||!r.desc) return;
+  alert(`${r.icon||''} ${r.label}\n\n${r.desc}`);
 }
 function onRoutineChipTap(date,key,score){
   // Toggle: tryck igen på samma chip → rensa
@@ -4894,6 +4907,7 @@ function openNewRoutine(){
   document.getElementById('rt-modal-title').textContent='Ny rutin';
   document.getElementById('rt-f-label').value='';
   document.getElementById('rt-f-icon').value='';
+  document.getElementById('rt-f-desc').value='';
   document.getElementById('rt-delete-btn').style.display='none';
   openModal('m-edit-routine');
 }
@@ -4904,21 +4918,23 @@ function openEditRoutine(id){
   document.getElementById('rt-modal-title').textContent='Redigera rutin';
   document.getElementById('rt-f-label').value=r.label||'';
   document.getElementById('rt-f-icon').value=r.icon||'';
+  document.getElementById('rt-f-desc').value=r.desc||'';
   document.getElementById('rt-delete-btn').style.display='';
   openModal('m-edit-routine');
 }
 function saveCustomRoutine(){
   const label=document.getElementById('rt-f-label').value.trim();
   const icon=document.getElementById('rt-f-icon').value.trim()||'⭐';
+  const desc=document.getElementById('rt-f-desc').value.trim();
   if(!label){ alert('Skriv ett namn för rutinen'); return; }
   if(editingRoutineId){
     const r=customRoutines.find(x=>x.id===editingRoutineId);
-    if(r){ r.label=label; r.icon=icon; }
+    if(r){ r.label=label; r.icon=icon; r.desc=desc; }
   }else{
     const maxOrder=(customRoutines||[]).reduce((m,r)=>Math.max(m,r.sortOrder||0),0);
     customRoutines.push({
       id:crypto.randomUUID(),
-      label,icon,sortOrder:maxOrder+1,archived:false
+      label,icon,desc,sortOrder:maxOrder+1,archived:false
     });
   }
   saveState();
@@ -4971,7 +4987,7 @@ async function syncRoutineLogToCloud(date,key,score){
 function activeRoutines(){
   const sys=SYSTEM_ROUTINES.map(r=>({...r,system:true,id:r.key}));
   const custom=(customRoutines||[]).filter(r=>!r.archived).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0))
-    .map(r=>({key:r.id, label:r.label, icon:r.icon||'⭐', id:r.id, system:false}));
+    .map(r=>({key:r.id, label:r.label, icon:r.icon||'⭐', desc:r.desc||'', id:r.id, system:false}));
   return [...sys,...custom];
 }
 function getRoutineScore(date,key){ return routineLogs[date]?.[key]||0; }

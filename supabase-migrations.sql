@@ -258,6 +258,8 @@ create table if not exists public.routines (
   archived boolean default false,
   created_at timestamptz default now()
 );
+-- Tillägg: valfri beskrivning som visas i info-popup
+alter table public.routines add column if not exists description text;
 create index if not exists routines_user_id_idx on public.routines(user_id);
 alter table public.routines enable row level security;
 drop policy if exists routines_own on public.routines;
