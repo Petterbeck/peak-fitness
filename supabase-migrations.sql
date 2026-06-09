@@ -282,6 +282,11 @@ alter table public.routine_logs enable row level security;
 drop policy if exists routine_logs_own on public.routine_logs;
 create policy routine_logs_own on public.routine_logs for all using (user_id = auth.uid());
 
+-- ------------------------------------------------------------
+-- 12. PLANNED_WORKOUTS sortering (ordning på samma dag)
+-- ------------------------------------------------------------
+alter table public.planned_workouts add column if not exists sort_order int default 0;
+
 -- ============================================================
 -- Ladda om PostgREST schema-cache (så nya kolumner syns direkt)
 -- ============================================================

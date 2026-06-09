@@ -920,6 +920,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
+<div class="modal" id="m-active-prompt" onclick="closeBg(event,'m-active-prompt')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Pågående pass</div>
+    <div id="m-active-prompt-body" style="font-size:13px;color:var(--text-2);line-height:1.5;margin-bottom:14px"></div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn-primary" onclick="continueActiveWorkout()" style="background:var(--accent-3)"><i class="ti ti-player-play"></i> Fortsätt med passet</button>
+      <button class="btn-ghost" onclick="pauseAndNavigate()" style="border-color:#b96b00;color:#b96b00"><i class="ti ti-player-pause"></i> Pausa och fortsätt senare</button>
+      <button class="btn-ghost" onclick="finishActiveFromPrompt()"><i class="ti ti-check"></i> Avsluta passet nu</button>
+      <button class="btn-ghost" onclick="discardActiveWorkout()" style="border-color:#e8200a44;color:#e8200a"><i class="ti ti-trash"></i> Avbryt passet (spara inget)</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="m-edit-routine" onclick="closeBg(event,'m-edit-routine')">
   <div class="modal-sheet"><div class="modal-handle"></div>
     <div class="modal-title" id="rt-modal-title">Ny rutin</div>
@@ -1103,7 +1116,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <button class="btn-sm" onclick="addRestDayAndRefresh()" style="flex:1;background:var(--surface-2);color:var(--text-1);font-weight:700;padding:9px"><i class="ti ti-zzz"></i> Markera som vilodag</button>
     </div>
     <div class="section-title" style="padding:0 2px 6px;font-size:13px">Lägg till pass denna dag</div>
-    <input class="search-bar" id="day-search" placeholder="Sök pass..." oninput="renderDayPassList()" style="margin-bottom:8px">
+    <input class="search-bar" id="day-search" placeholder="Sök pass..." oninput="renderDayPassList()" style="margin-bottom:6px">
+    <div id="day-form-filters" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px"></div>
     <div id="day-pass-list" style="display:flex;flex-direction:column;gap:5px"></div>
   </div>
 </div>
@@ -4215,7 +4229,7 @@ async function syncToCloud(silent){
     // Steg 5: Push planned_workouts
     if(plannedWorkouts.length){
       const {error}=await supa.from('planned_workouts').upsert(plannedWorkouts.map(pw=>({
-        id:pw.id,user_id:uid,pass_id:pw.passId||null,date:pw.date,notes:pw.notes||''
+        id:pw.id,user_id:uid,pass_id:pw.passId||null,date:pw.date,sort_order:toInt(pw.sortOrder,0),notes:pw.notes||''
       })));
       if(error) throw error;
     }
@@ -4390,7 +4404,7 @@ async function loadFromCloud(silent){
     // Migrera så cloud-data också får primärform (fält som inte syncas än)
     migrateExercisesToPrimaryForm();
     plannedWorkouts=(pwRes.data||[]).map(pw=>({
-      id:pw.id,passId:pw.pass_id,date:pw.date,notes:pw.notes||''
+      id:pw.id,passId:pw.pass_id,date:pw.date,sortOrder:pw.sort_order||0,notes:pw.notes||''
     }));
     workoutHistory=(whRes.data||[]).map(w=>({
       id:w.id,passName:w.pass_name,formName:w.form_name,formCat:w.form_cat,
@@ -4798,7 +4812,13 @@ function isoDate(d){
   return `${y}-${m}-${day}`;
 }
 function todayIso(){return isoDate(new Date());}
-function plannedForDate(iso){return plannedWorkouts.filter(p=>p.date===iso);}
+function plannedForDate(iso){
+  return plannedWorkouts.filter(p=>p.date===iso).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+}
+function nextPlannedSortOrder(iso){
+  const list=plannedWorkouts.filter(p=>p.date===iso);
+  return list.reduce((m,p)=>Math.max(m,p.sortOrder||0),0)+1;
+}
 function plannedForToday(){return plannedForDate(todayIso());}
 function formatDateLong(iso){
   const [y,m,d]=iso.split('-').map(Number);
@@ -4807,11 +4827,29 @@ function formatDateLong(iso){
 }
 function addPlan(iso,passId){
   const r=findPass(passId);if(!r) return;
-  plannedWorkouts.push({id:crypto.randomUUID(),date:iso,passId,formId:r.form.id,notes:''});
+  plannedWorkouts.push({id:crypto.randomUUID(),date:iso,passId,formId:r.form.id,sortOrder:nextPlannedSortOrder(iso),notes:''});
   saveState();
 }
 function addRestDay(iso){
-  plannedWorkouts.push({id:crypto.randomUUID(),date:iso,passId:null,isRest:true,notes:'Vila'});
+  plannedWorkouts.push({id:crypto.randomUUID(),date:iso,passId:null,isRest:true,sortOrder:nextPlannedSortOrder(iso),notes:'Vila'});
+  saveState();
+}
+function movePlanned(planId,dir){
+  // Flytta upp eller ner inom samma dag
+  const p=plannedWorkouts.find(x=>x.id===planId);
+  if(!p) return;
+  const siblings=plannedForDate(p.date); // redan sorterad
+  const idx=siblings.findIndex(x=>x.id===planId);
+  const swap=siblings[idx+dir];
+  if(!swap) return;
+  const tmp=p.sortOrder||0;
+  p.sortOrder=swap.sortOrder||0;
+  swap.sortOrder=tmp;
+  // Om båda råkat ha samma värde, ge dem en stabil ny ordning baserad på arrayindex
+  if(p.sortOrder===swap.sortOrder){
+    siblings.forEach((s,i)=>{ s.sortOrder=i+1; });
+    [siblings[idx].sortOrder,siblings[idx+dir].sortOrder]=[siblings[idx+dir].sortOrder,siblings[idx].sortOrder];
+  }
   saveState();
 }
 function removePlan(planId){
@@ -4830,10 +4868,27 @@ let loggedExs=[];
 let selectedPass=null;
 const wDays=[5,8,10,12,14,17,19,22,24];
 let workoutHistory=[];
-let plannedWorkouts=[]; // {id, date:'YYYY-MM-DD', passId, formId, notes}
+let plannedWorkouts=[]; // {id, date:'YYYY-MM-DD', passId, formId, sortOrder, notes}
 let dayModalDate=null;
 // Atletens profil (för "egen vikt"-övningar etc) — koppling till editerbar profil kommer senare
 let userProfile={name:'Erik',weightKg:82,heightCm:183,age:42,birthDate:null};
+
+/* ========== PÅGÅENDE PASS (paus/återuppta) ========== */
+// När user startar ett pass sätts activeWorkout. Snapshot av loggedExs+timer
+// persisteras vid varje saveState så ett pågående pass överlever app-omstart.
+// null = inget pågående.
+let activeWorkout=null;
+let pendingNavigateTo=null; // sätts när navigate() interceptas av pågående-pass-modal
+function snapshotActiveWorkout(){
+  if(!activeWorkout) return;
+  activeWorkout.elapsedSec=timerSeconds||0;
+  activeWorkout.loggedExs=loggedExs.map(ex=>({
+    exId:ex.exId||null,videoUrl:ex.videoUrl||null,name:ex.name,muscle:ex.muscle,cat:ex.cat,
+    sets:ex.sets.map(s=>({w:s.w,r:s.r,done:!!s.done}))
+  }));
+  activeWorkout.note=document.getElementById('log-note')?.value||'';
+  activeWorkout.feelRating=feelRating||0;
+}
 
 /* ========== RUTINER (Min logg) ========== */
 // 5 fasta system-rutiner. Lever som konstanter i appen, syncas EJ som rader till routines-tabellen.
@@ -5057,10 +5112,12 @@ function setRoutineScore(date,key,score){
 const STORAGE_KEY='alpinfys_v2';
 const STORAGE_KEY_LEGACY='alpinfys_v1';
 function saveState(){
+  // Snapshot:a senaste pågående-pass-state om någon är igång
+  if(activeWorkout) snapshotActiveWorkout();
   try{
     localStorage.setItem(STORAGE_KEY,JSON.stringify({
       trainingForms,userGoals,workoutHistory,exercises,plannedWorkouts,userProfile,
-      customRoutines,routineLogs,
+      customRoutines,routineLogs,activeWorkout,
       theme:currentTheme,v:2
     }));
   }catch(e){console.warn('Save failed:',e);}
@@ -5090,6 +5147,7 @@ function loadState(){
     if(s.userProfile&&typeof s.userProfile==='object') userProfile={...userProfile,...s.userProfile};
     if(Array.isArray(s.customRoutines)) customRoutines=s.customRoutines;
     if(s.routineLogs&&typeof s.routineLogs==='object') routineLogs=s.routineLogs;
+    if(s.activeWorkout&&typeof s.activeWorkout==='object') activeWorkout=s.activeWorkout;
     if(s.theme){
       currentTheme=s.theme;
       document.getElementById('app').setAttribute('data-theme',currentTheme);
@@ -5111,6 +5169,18 @@ function navigate(id){
   if(id==='page-exercises'){
     navigate('page-plan');
     setPlanTab(null,'tab-exercises');
+    return;
+  }
+  // Intercept om vi är mitt i ett pågående pass och flyttar BORT från page-log
+  const curPage=document.querySelector('.page.active')?.id;
+  const isLogActive=document.getElementById('log-active')?.style.display==='flex';
+  if(curPage==='page-log' && id!=='page-log' && activeWorkout && isLogActive && !_navBypass){
+    snapshotActiveWorkout();
+    saveState();
+    pendingNavigateTo=id;
+    document.getElementById('m-active-prompt-body').innerHTML=
+      `Du har ett pågående pass — <b>${escapeHtml(activeWorkout.passName||'Pass')}</b>${activeWorkout.elapsedSec?` (${Math.floor(activeWorkout.elapsedSec/60)} min)`:''}.<br>Vad vill du göra?`;
+    openModal('m-active-prompt');
     return;
   }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -5991,6 +6061,83 @@ function selPass(id){
   renderLogPassList();
 }
 
+// Sätts true för att tillfälligt kringgå navigate-intercept (vid återupptag, paus-flöde, finishLog)
+let _navBypass=false;
+
+// Återuppta ett tidigare pausat pass.
+function resumeActiveWorkout(){
+  if(!activeWorkout) return;
+  selectedPass={
+    id:activeWorkout.passId,name:activeWorkout.passName,
+    formName:activeWorkout.passFormName,formCat:activeWorkout.passFormCat,
+    formIcon:activeWorkout.passFormIcon
+  };
+  loggedExs=(activeWorkout.loggedExs||[]).map(ex=>({...ex,sets:(ex.sets||[]).map(s=>({...s}))}));
+  timerSeconds=activeWorkout.elapsedSec||0;
+  feelRating=activeWorkout.feelRating||0;
+  _navBypass=true; navigate('page-log'); _navBypass=false;
+  document.getElementById('log-select').style.display='none';
+  document.getElementById('log-active').style.display='flex';
+  document.getElementById('log-name').textContent=selectedPass.name;
+  document.getElementById('log-sub').textContent=selectedPass.formName;
+  if(document.getElementById('log-note')) document.getElementById('log-note').value=activeWorkout.note||'';
+  // Återställ feel-rating UI
+  document.querySelectorAll('.feel-btn').forEach((b,idx)=>{
+    b.classList.toggle('active',idx+1===feelRating);
+  });
+  // Starta om timer
+  clearInterval(timerInterval);
+  timerInterval=setInterval(()=>{
+    timerSeconds++;
+    const m=String(Math.floor(timerSeconds/60)).padStart(2,'0');
+    const s=String(timerSeconds%60).padStart(2,'0');
+    const tEl=document.getElementById('log-timer'); if(tEl) tEl.textContent=m+':'+s;
+  },1000);
+  // Update display direkt
+  const m=String(Math.floor(timerSeconds/60)).padStart(2,'0');
+  const s=String(timerSeconds%60).padStart(2,'0');
+  const tEl=document.getElementById('log-timer'); if(tEl) tEl.textContent=m+':'+s;
+  renderLogExs();
+}
+
+// Modal-knappar
+function continueActiveWorkout(){
+  closeModal('m-active-prompt');
+  pendingNavigateTo=null;
+}
+function pauseAndNavigate(){
+  snapshotActiveWorkout();
+  clearInterval(timerInterval);
+  saveState();
+  closeModal('m-active-prompt');
+  const dest=pendingNavigateTo||'page-home';
+  pendingNavigateTo=null;
+  _navBypass=true; navigate(dest); _navBypass=false;
+  showToast(`⏸️ Passet pausat — fortsätt från startsidan när du vill`,3500);
+}
+function finishActiveFromPrompt(){
+  closeModal('m-active-prompt');
+  pendingNavigateTo=null;
+  finishLog();
+}
+function discardActiveWorkout(){
+  if(!confirm('Avbryt det pågående passet utan att spara?')) return;
+  clearInterval(timerInterval);
+  activeWorkout=null;
+  loggedExs=[];selectedPass=null;
+  timerSeconds=0;feelRating=0;
+  document.getElementById('log-active').style.display='none';
+  document.getElementById('log-select').style.display='flex';
+  if(document.getElementById('log-note')) document.getElementById('log-note').value='';
+  document.querySelectorAll('.feel-btn').forEach(b=>b.classList.remove('active'));
+  saveState();
+  renderHomeHero();
+  closeModal('m-active-prompt');
+  const dest=pendingNavigateTo||'page-home';
+  pendingNavigateTo=null;
+  _navBypass=true; navigate(dest); _navBypass=false;
+}
+
 function startLog(){
   if(!selectedPass) return;
   loggedExs=[];
@@ -6015,9 +6162,23 @@ function startLog(){
   document.getElementById('log-active').style.display='flex';
   document.getElementById('log-name').textContent=selectedPass.name;
   document.getElementById('log-sub').textContent=selectedPass.formName;
-  timerSeconds=0;clearInterval(timerInterval);
+  timerSeconds=0;feelRating=0;
+  document.querySelectorAll('.feel-btn').forEach(b=>b.classList.remove('active'));
+  if(document.getElementById('log-note')) document.getElementById('log-note').value='';
+  clearInterval(timerInterval);
   timerInterval=setInterval(()=>{timerSeconds++;const m=String(Math.floor(timerSeconds/60)).padStart(2,'0');const s=String(timerSeconds%60).padStart(2,'0');document.getElementById('log-timer').textContent=m+':'+s;},1000);
+  // Markera som pågående
+  activeWorkout={
+    id:crypto.randomUUID(),
+    passId:selectedPass.id,passName:selectedPass.name,
+    passFormName:selectedPass.formName,passFormCat:selectedPass.formCat,passFormIcon:selectedPass.formIcon,
+    loggedExs:[],elapsedSec:0,feelRating:0,note:'',
+    startedAt:new Date().toISOString()
+  };
+  snapshotActiveWorkout();
+  saveState();
   renderLogExs();
+  renderHomeHero(); // uppdatera Hem så återupptag-knappen kan visas vid behov
 }
 
 function renderLogExs(){
@@ -6132,10 +6293,17 @@ function finishLog(){
   feelRating=0;
   document.querySelectorAll('.feel-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('log-note').value='';
-  navigate('page-home');
+  activeWorkout=null; saveState();
+  _navBypass=true; navigate('page-home'); _navBypass=false;
   setTimeout(()=>showToast(`💥 +${pts} p! Peak Score: <b>${score}</b> ${tier.icon} ${tier.label}`,4000),350);
 }
-function cancelLog(){clearInterval(timerInterval);document.getElementById('log-active').style.display='none';document.getElementById('log-select').style.display='flex';}
+function cancelLog(){
+  if(activeWorkout&&!confirm('Avbryt det pågående passet utan att spara?')) return;
+  clearInterval(timerInterval);
+  activeWorkout=null; saveState();
+  document.getElementById('log-active').style.display='none';
+  document.getElementById('log-select').style.display='flex';
+}
 
 /* LOG EX MODAL */
 function setLexCat(btn,c){lexCat=c;document.querySelectorAll('#lex-cats .filter-chip').forEach(x=>x.classList.remove('active'));btn.classList.add('active');renderLogExModal();}
@@ -6703,9 +6871,38 @@ async function transcribeCoachAudio(blob){
 }
 
 /* ========== HOME HERO ========== */
+function renderResumeWorkoutWidget(){
+  let el=document.getElementById('resume-workout-widget');
+  if(!el){
+    // Skapa widget-elementet på Hem (placeras före home-hero-content)
+    const heroEl=document.getElementById('home-hero-content');
+    if(!heroEl||!heroEl.parentNode) return;
+    el=document.createElement('div');
+    el.id='resume-workout-widget';
+    heroEl.parentNode.insertBefore(el,heroEl);
+  }
+  if(!activeWorkout){ el.innerHTML=''; el.style.display='none'; return; }
+  const min=Math.floor((activeWorkout.elapsedSec||0)/60);
+  const sec=String((activeWorkout.elapsedSec||0)%60).padStart(2,'0');
+  const setsDone=(activeWorkout.loggedExs||[]).reduce((sum,ex)=>sum+(ex.sets||[]).filter(s=>s.done).length,0);
+  el.style.display='block';
+  el.innerHTML=`
+    <div onclick="resumeActiveWorkout()" style="background:linear-gradient(135deg,#b96b00,#e8200a);color:#fff;border-radius:var(--r);padding:13px 15px;cursor:pointer;display:flex;align-items:center;gap:11px;margin-bottom:12px;box-shadow:0 4px 12px rgba(232,32,10,0.18)">
+      <div style="background:rgba(255,255,255,0.18);width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⏸️</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;font-weight:800;opacity:0.85;text-transform:uppercase;letter-spacing:0.08em">Pausat pass</div>
+        <div style="font-size:14px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(activeWorkout.passName||'Pass')}</div>
+        <div style="font-size:11px;opacity:0.85">${min}:${sec} · ${setsDone} set klara</div>
+      </div>
+      <i class="ti ti-player-play-filled" style="font-size:22px"></i>
+    </div>`;
+}
+
 function renderHomeHero(){
   const el=document.getElementById('home-hero-content');
   if(!el) return;
+  // Återupptag-widget om ett pass är pausat
+  renderResumeWorkoutWidget();
   const today=new Date();
   const todayStr=todayIso();
   const planned=plannedForToday();
@@ -7239,22 +7436,27 @@ function openDayModal(iso){
   dayIsPast=iso<todayIso();
   document.getElementById('day-title').textContent=formatDateLong(iso);
   document.getElementById('day-search').value='';
+  // Reset:a filter vid varje öppning
+  dayFormFilter='__all__'; dayTagFilter=null;
   // Lås UI för planeringsdelar om historiskt datum
   const restBtn=document.querySelector('#m-day button[onclick="addRestDayAndRefresh()"]');
   const restWrap=restBtn?restBtn.parentElement:null;
   const searchEl=document.getElementById('day-search');
   const passListEl=document.getElementById('day-pass-list');
+  const filterEl=document.getElementById('day-form-filters');
   if(dayIsPast){
     if(restWrap) restWrap.style.display='none';
     if(searchEl) searchEl.style.display='none';
+    if(filterEl) filterEl.style.display='none';
     if(passListEl) passListEl.innerHTML='<div style="background:var(--surface-2);border-radius:var(--r);padding:11px 13px;font-size:12px;color:var(--text-2);line-height:1.5">⚠ Historiskt datum — du kan se loggade pass men inte ändra planering.</div>';
   }else{
     if(restWrap) restWrap.style.display='flex';
     if(searchEl) searchEl.style.display='block';
+    if(filterEl) filterEl.style.display='flex';
   }
   renderDayCompletedList();
   renderDayPlannedList();
-  if(!dayIsPast) renderDayPassList();
+  if(!dayIsPast){ renderDayFormFilters(); renderDayPassList(); }
   openModal('m-day');
 }
 
@@ -7281,13 +7483,22 @@ function renderDayPlannedList(){
   const list=document.getElementById('day-planned-list');
   const planned=plannedForDate(dayModalDate);
   if(!planned.length){list.innerHTML=dayIsPast?'':'<div style="font-size:12px;color:var(--text-3);padding:6px 2px">Inget planerat denna dag.</div>';return;}
+  const showMove=!dayIsPast && planned.length>1;
   const removeBtnHtml=p=>dayIsPast?'':`<button onclick="removePlanAndRefresh('${p.id}')" class="remove-btn" title="Ta bort"><i class="ti ti-trash"></i></button>`;
-  list.innerHTML=planned.map(p=>{
+  const moveBtns=(p,idx)=>{
+    if(!showMove) return '';
+    return `<div style="display:flex;flex-direction:column;gap:1px;margin-right:4px">
+      <button onclick="movePlannedAndRefresh('${p.id}',-1)" class="move-btn" title="Flytta upp" ${idx===0?'disabled style="opacity:0.3"':''}><i class="ti ti-chevron-up"></i></button>
+      <button onclick="movePlannedAndRefresh('${p.id}',1)" class="move-btn" title="Flytta ner" ${idx===planned.length-1?'disabled style="opacity:0.3"':''}><i class="ti ti-chevron-down"></i></button>
+    </div>`;
+  };
+  list.innerHTML=planned.map((p,idx)=>{
     if(p.isRest){
       return `
       <div class="sched-row" style="cursor:default">
         <div class="sched-dot" style="background:var(--surface-3);color:var(--text-2)"><i class="ti ti-zzz" style="font-size:13px"></i></div>
         <div class="sched-info"><div class="sched-day">PLANERAT</div><div class="sched-name">Vilodag 😴</div></div>
+        ${moveBtns(p,idx)}
         ${removeBtnHtml(p)}
       </div>`;
     }
@@ -7296,10 +7507,19 @@ function renderDayPlannedList(){
     return `
     <div class="sched-row today" style="cursor:default">
       <div class="sched-dot today-dot" style="animation:none"><i class="ti ti-calendar-event" style="font-size:13px"></i></div>
-      <div class="sched-info"><div class="sched-day">PLANERAT</div><div class="sched-name">${r.pass.name}</div></div>
+      <div class="sched-info"><div class="sched-day">PLANERAT${showMove?' #'+(idx+1):''}</div><div class="sched-name">${r.pass.name}</div></div>
+      ${moveBtns(p,idx)}
       ${removeBtnHtml(p)}
     </div>`;
   }).join('');
+}
+
+function movePlannedAndRefresh(planId,dir){
+  movePlanned(planId,dir);
+  renderDayPlannedList();
+  renderCalendar();
+  renderWeekSchedule();
+  renderHomeHero();
 }
 
 function addRestDayAndRefresh(){
@@ -7503,11 +7723,48 @@ function deleteWorkoutLog(){
   renderGoals();
 }
 
+let dayFormFilter='__all__'; // '__all__' eller training form id
+let dayTagFilter=null; // valfri program-tagg
+function renderDayFormFilters(){
+  const el=document.getElementById('day-form-filters');
+  if(!el) return;
+  const formsWithPasses=trainingForms.filter(f=>(f.passTypes||[]).length>0);
+  const chips=[`<button class="filter-chip ${dayFormFilter==='__all__'?'active':''}" onclick="setDayFormFilter('__all__')">Alla</button>`];
+  formsWithPasses.forEach(f=>{
+    chips.push(`<button class="filter-chip ${dayFormFilter===f.id?'active':''}" onclick="setDayFormFilter('${f.id}')">${f.icon||''} ${escapeHtml(f.name)}</button>`);
+  });
+  // Program-taggar (om sådana finns)
+  const progTags=getProgramTags();
+  if(progTags.length){
+    chips.push(`<span style="width:100%;font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase;margin:4px 0 2px">Program</span>`);
+    progTags.forEach(t=>{
+      chips.push(`<button class="filter-chip ${dayTagFilter===t.tag?'active':''}" onclick="setDayTagFilter('${escapeHtml(t.tag).replace(/'/g,"\\'")}')">${escapeHtml(t.tag)} (${t.count})</button>`);
+    });
+  }
+  el.innerHTML=chips.join('');
+}
+function setDayFormFilter(id){
+  dayFormFilter=id;
+  renderDayFormFilters();
+  renderDayPassList();
+}
+function setDayTagFilter(tag){
+  dayTagFilter=(dayTagFilter===tag)?null:tag; // tap igen → rensa
+  renderDayFormFilters();
+  renderDayPassList();
+}
+
 function renderDayPassList(){
   const q=(document.getElementById('day-search')?.value||'').toLowerCase().trim();
   const all=[];
   trainingForms.forEach(f=>f.passTypes.forEach(p=>all.push({pass:p,form:f})));
-  const fil=q?all.filter(({pass,form})=>(pass.name+' '+form.name).toLowerCase().includes(q)):all;
+  let fil=all;
+  if(dayFormFilter&&dayFormFilter!=='__all__') fil=fil.filter(({form})=>form.id===dayFormFilter);
+  if(dayTagFilter){
+    const slug=dayTagFilter.toLowerCase().replace(/\s+/g,'-');
+    fil=fil.filter(({pass})=>(pass.customTags||[]).includes(dayTagFilter)||(pass.formTags||[]).includes(dayTagFilter)||(pass.formTags||[]).includes(slug));
+  }
+  if(q) fil=fil.filter(({pass,form})=>(pass.name+' '+form.name+' '+(pass.customTags||[]).join(' ')).toLowerCase().includes(q));
   document.getElementById('day-pass-list').innerHTML=fil.map(({pass,form})=>`
     <div class="ex-row" onclick="addPlanAndRefresh('${pass.id}')" style="cursor:pointer">
       <div class="ex-row-thumb" style="background:${catGrad[form.cat]||catGrad.strength}">${form.icon}</div>
