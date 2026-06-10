@@ -326,8 +326,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div class="topbar">
   <div class="brand"><span class="brand-mark">🏔️</span><span class="brand-name">Peak Fitness</span></div>
   <div class="top-right">
-    <div class="streak" id="peak-score-chip" onclick="showPeakInfo()" title="Peak Score — vägt mått på din träning de senaste 7 dagarna" style="cursor:pointer">💪 0</div>
-    <div class="streak" id="streak-chip" title="Tränat X dagar i rad (streak)"><i class="ti ti-flame" style="font-size:12px"></i> 7</div>
+    <div class="streak" id="peak-score-chip" onclick="showPeakInfo()" title="Peak Score — träning de senaste 7 dagarna" style="cursor:pointer">💪 0</div>
+    <div class="streak" id="progress-score-chip" onclick="showProgressInfo()" title="Progress Score — rutiner senaste 7 dagarna" style="cursor:pointer;background:#0d7333">🟢 0</div>
+    <div class="streak" id="streak-chip" title="Dagar i rad du loggat något"><i class="ti ti-flame" style="font-size:12px"></i> 0</div>
     <button class="icon-btn avatar-btn" onclick="navigate('page-profile')" id="profile-btn" title="Profil">E</button>
   </div>
 </div>
@@ -1002,6 +1003,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <button class="btn-ghost" onclick="closeModal('m-import-share')">Avbryt</button>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="modal" id="m-progress" onclick="closeBg(event,'m-progress')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Progress Score</div>
+    <div id="m-progress-body" style="font-size:13px;line-height:1.5"></div>
+    <button class="btn-ghost" onclick="closeModal('m-progress')" style="margin-top:10px">Stäng</button>
   </div>
 </div>
 
@@ -4591,7 +4600,7 @@ async function loadFromCloud(silent){
     // Nu har vi en färsk kopia av molnet → säkert att låta sync radera borttagna rader
     cloudLoadComplete=true;
     // Refresh alla vyer
-    renderHomeHero();renderHomeStats();renderStreak();renderPeakScore();renderProfileInfo();renderCalendar();renderWeekSchedule();renderPassList();renderExercises();renderGoals();
+    renderHomeHero();renderHomeStats();renderStreak();renderPeakScore();renderProgressScore();renderProfileInfo();renderCalendar();renderWeekSchedule();renderPassList();renderExercises();renderGoals();
     if(!silent) setSyncStatus('✓ Hämtat från molnet '+new Date().toLocaleTimeString('sv-SE'),'ok');
     return true;
   }catch(e){
@@ -4657,7 +4666,7 @@ function restoreAllData(data){
   if(Array.isArray(data.workoutHistory)) workoutHistory=data.workoutHistory;
   saveState();
   // Refresh alla vyer
-  renderHomeHero();renderHomeStats();renderStreak();renderPeakScore();renderProfileInfo();renderCalendar();renderWeekSchedule();renderPassList();renderExercises();renderGoals();
+  renderHomeHero();renderHomeStats();renderStreak();renderPeakScore();renderProgressScore();renderProfileInfo();renderCalendar();renderWeekSchedule();renderPassList();renderExercises();renderGoals();
 }
 
 // Återställ från en uppladdad fil
@@ -5121,6 +5130,9 @@ function renderRoutineDay(){
     html+=renderNutritionAdvancedBlock(dateStr);
   }
   rows.innerHTML=html;
+  // Uppdatera score/streak-chips i toppbaren när rutiner ändras
+  if(typeof renderProgressScore==='function') renderProgressScore();
+  if(typeof renderStreak==='function') renderStreak();
 }
 
 function routineLabelHtml(r){
@@ -5557,7 +5569,7 @@ function navigate(id){
   const m={'page-home':'nav-home','page-plan':'nav-plan','page-log':'nav-home','page-history':'nav-history','page-coach':'nav-coach','page-profile':'nav-home','page-stats':'nav-home'};
   if(m[id]) document.getElementById(m[id])?.classList.add('active');
   if(id==='page-stats') setTimeout(renderStatsPage,50);
-  if(id==='page-home'){renderHomeHero();renderHomeStats();renderStreak();renderPeakScore();renderGoals();}
+  if(id==='page-home'){renderHomeHero();renderHomeStats();renderStreak();renderPeakScore();renderProgressScore();renderWeekSummary();renderGoals();}
   if(id==='page-plan'){renderWeekSchedule();renderCalendar();}
   if(id==='page-log') renderLogPassList();
   if(id==='page-history') renderHistory();
@@ -6776,20 +6788,258 @@ function calcPeakScore(){
   return getWorkoutsInPeriod(start,end).reduce((s,w)=>s+workoutPoints(w),0);
 }
 
+// Streak = konsekutiva dagar BAKÅT från idag där användaren loggat NÅGOT
+// (pass, rutin, sömn eller kost). Bryts vid första tomma dag i historiken.
+// Om idag inte är loggad ännu — börja räkna från igår (toleranszon).
 function calcStreak(){
   const today=new Date();today.setHours(0,0,0,0);
-  const dateSet=new Set(workoutHistory.filter(w=>w.date).map(w=>{
+  const passSet=new Set(workoutHistory.filter(w=>w.date).map(w=>{
     const d=new Date(w.date);d.setHours(0,0,0,0);return d.getTime();
   }));
+  function hasLogged(dt){
+    if(passSet.has(dt.getTime())) return true;
+    const iso=isoDate(dt);
+    if(routineLogs[iso]&&Object.keys(routineLogs[iso]).length>0) return true;
+    if(sleepLogs[iso]!=null) return true;
+    const n=nutritionLogs[iso];
+    if(n&&((n.meals&&Object.keys(n.meals).length>0)||(n.quality>0))) return true;
+    return false;
+  }
   let streak=0;
   let check=new Date(today);
-  // Om inget pass idag, börja räkna från igår
-  if(!dateSet.has(check.getTime())) check.setDate(check.getDate()-1);
-  while(dateSet.has(check.getTime())){
+  if(!hasLogged(check)) check.setDate(check.getDate()-1);
+  while(hasLogged(check)){
     streak++;
     check.setDate(check.getDate()-1);
   }
   return streak;
+}
+
+/* ========== PROGRESS SCORE (rullande 7-dagars rutin-snitt) ========== */
+const PROGRESS_TIERS=[
+  {min:91, emoji:'🔥', label:'Episk',  color:'#0d7333', bg:'#22a85222'},
+  {min:76, emoji:'💪', label:'Stark',  color:'#22a852', bg:'#22a85220'},
+  {min:51, emoji:'🟢', label:'Bra',    color:'#1a8a4a', bg:'#22a8521a'},
+  {min:26, emoji:'🟡', label:'OK',     color:'#b96b00', bg:'#b96b0020'},
+  {min:0,  emoji:'😴', label:'Vila',   color:'#a5a29a', bg:'#a5a29a20'}
+];
+function progressTier(score){ return PROGRESS_TIERS.find(t=>score>=t.min)||PROGRESS_TIERS[PROGRESS_TIERS.length-1]; }
+
+// Beräkna en enskild rutins poäng (1-4) för en given dag, eller null om ej loggad.
+function dayRoutineScore(dateStr,routine){
+  if(routine.kind==='sleep'){
+    const h=sleepLogs[dateStr];
+    if(h==null) return null;
+    const target=Number(userProfile.targetSleepHours)||8;
+    const diff=Math.abs(h-target);
+    if(diff<=0.5) return 4;
+    if(diff<=1.0) return 3;
+    if(diff<=1.5) return 2;
+    return 1;
+  }
+  if(routine.kind==='food'){
+    const mode=userProfile.nutritionLogMode||'simple';
+    if(mode==='advanced'){
+      const n=nutritionLogs[dateStr];
+      if(!n) return null;
+      // Kombinera måltids-andel (40%) och kvalitet (60%)
+      const mealCount=n.meals?Object.values(n.meals).filter(Boolean).length:0;
+      const mealScore=mealCount>=4?4:mealCount>=3?3:mealCount>=2?2:mealCount>=1?1:0;
+      const qual=n.quality||0;
+      if(!mealScore&&!qual) return null;
+      if(!qual) return mealScore;
+      if(!mealScore) return qual;
+      return Math.round((mealScore*0.4+qual*0.6)*10)/10;
+    }
+    return routineLogs[dateStr]?.['food']||null;
+  }
+  // emoji-rutiner
+  const v=routineLogs[dateStr]?.[routine.key];
+  return v||null;
+}
+
+// Räkna ut Progress Score = snitt av rutin-poäng (1-4) över senaste 7 dagarna, normaliserat 0-100.
+function calcProgressScore(){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const routines=activeRoutines();
+  if(!routines.length) return {score:0,daysLogged:0,breakdown:[]};
+  const sums={};
+  routines.forEach(r=>{ sums[r.key]={sum:0,count:0,label:r.label,icon:r.icon}; });
+  let totalScore=0,totalCount=0;
+  for(let i=0;i<7;i++){
+    const d=new Date(today); d.setDate(d.getDate()-i);
+    const dateStr=isoDate(d);
+    let daySum=0,dayCount=0;
+    routines.forEach(r=>{
+      const s=dayRoutineScore(dateStr,r);
+      if(s!=null&&s>=1){
+        daySum+=s; dayCount++;
+        sums[r.key].sum+=s; sums[r.key].count++;
+      }
+    });
+    if(dayCount>0){ totalScore+=daySum/dayCount; totalCount++; }
+  }
+  const score=totalCount>0?Math.round((totalScore/totalCount)/4*100):0;
+  const breakdown=routines.map(r=>{
+    const s=sums[r.key];
+    return {
+      key:r.key, label:s.label, icon:s.icon,
+      score:s.count>0?Math.round((s.sum/s.count)/4*100):0,
+      daysLogged:s.count
+    };
+  }).sort((a,b)=>b.score-a.score);
+  return {score,daysLogged:totalCount,breakdown};
+}
+
+function renderProgressScore(){
+  const el=document.getElementById('progress-score-chip');
+  if(!el) return;
+  const {score,daysLogged}=calcProgressScore();
+  const tier=progressTier(score);
+  el.innerHTML=`${tier.emoji} ${score}`;
+  el.style.background=tier.color;
+  el.title=daysLogged>0?`Progress Score ${score}/100 (${tier.label}) — ${daysLogged} av 7 dagar loggade`:'Inga rutiner loggade än — börja idag!';
+}
+
+function showProgressInfo(){
+  const {score,daysLogged,breakdown}=calcProgressScore();
+  const tier=progressTier(score);
+  const body=document.getElementById('m-progress-body');
+  let breakdownHtml='';
+  if(breakdown.length){
+    breakdownHtml=`<div style="margin-top:14px"><div style="font-size:11px;font-weight:800;color:var(--text-3);text-transform:uppercase;margin-bottom:6px">Per rutin (senaste 7 dagar)</div>`+
+      breakdown.map(b=>{
+        const bTier=progressTier(b.score);
+        const noLog=b.daysLogged===0;
+        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border)">
+          <span style="font-size:15px">${b.icon}</span>
+          <span style="flex:1;font-size:13px;font-weight:600">${escapeHtml(b.label)}</span>
+          ${noLog?'<span style="font-size:11px;color:var(--text-3)">— ej loggad</span>':`<span style="font-size:11px;color:var(--text-3)">${b.daysLogged}/7d</span>
+          <span style="font-size:13px;font-weight:800;color:${bTier.color}">${b.score}</span>`}
+        </div>`;
+      }).join('')+`</div>`;
+  }
+  body.innerHTML=`
+    <div style="background:${tier.bg};border:1px solid ${tier.color}44;border-radius:var(--r);padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <div style="font-size:32px">${tier.emoji}</div>
+      <div style="flex:1">
+        <div style="font-size:11px;font-weight:800;color:var(--text-3);text-transform:uppercase">Progress Score</div>
+        <div style="font-size:24px;font-weight:800;color:${tier.color}">${score}<span style="font-size:14px;color:var(--text-3)">/100</span></div>
+        <div style="font-size:12px;color:var(--text-2)">${tier.label}${daysLogged>0?` · ${daysLogged} av 7 dagar loggade`:''}</div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.55">Snittet av dina rutin-loggningar de senaste 7 dagarna. Logga sömn, träning, kost m.fl. dagligen för att öka.</div>
+    ${breakdownHtml}
+  `;
+  openModal('m-progress');
+}
+
+/* ========== VECKO-SAMMANFATTNING (måndag/söndag-banner på Hem) ========== */
+function isoWeekKey(d){
+  const dt=new Date(d.getTime()); dt.setHours(0,0,0,0);
+  dt.setDate(dt.getDate()+3-((dt.getDay()+6)%7));
+  const week1=new Date(dt.getFullYear(),0,4);
+  const week=1+Math.round(((dt-week1)/86400000-3+((week1.getDay()+6)%7))/7);
+  return `${dt.getFullYear()}-W${String(week).padStart(2,'0')}`;
+}
+
+function calcLastWeekSummary(){
+  // Förra veckan = mån-sön före senaste mån.
+  const today=new Date(); today.setHours(0,0,0,0);
+  const dow=today.getDay()||7; // måndag=1, söndag=7
+  const thisMon=new Date(today); thisMon.setDate(today.getDate()-(dow-1));
+  const lastMon=new Date(thisMon); lastMon.setDate(thisMon.getDate()-7);
+  const lastSun=new Date(thisMon); lastSun.setDate(thisMon.getDate()-1);
+  const routines=activeRoutines();
+  const sums={}; routines.forEach(r=>{ sums[r.key]={sum:0,count:0,label:r.label,icon:r.icon}; });
+  let totalScore=0,totalCount=0,daysLoggedAny=0;
+  let sleepSum=0,sleepCount=0;
+  let passCount=0,plannedCount=0;
+  // Räkna passe loggade senaste veckan
+  workoutHistory.forEach(w=>{
+    if(!w.date) return;
+    const d=new Date(w.date); d.setHours(0,0,0,0);
+    if(d>=lastMon&&d<=lastSun) passCount++;
+  });
+  plannedWorkouts.forEach(pw=>{
+    if(!pw.date) return;
+    const iso=pw.date;
+    const d=new Date(iso+'T00:00:00');
+    if(d>=lastMon&&d<=lastSun&&!pw.isRest) plannedCount++;
+  });
+  for(let i=0;i<7;i++){
+    const d=new Date(lastMon); d.setDate(lastMon.getDate()+i);
+    const dateStr=isoDate(d);
+    let daySum=0,dayCount=0;
+    routines.forEach(r=>{
+      const s=dayRoutineScore(dateStr,r);
+      if(s!=null&&s>=1){
+        daySum+=s; dayCount++;
+        sums[r.key].sum+=s; sums[r.key].count++;
+      }
+    });
+    if(dayCount>0){ totalScore+=daySum/dayCount; totalCount++; daysLoggedAny++; }
+    const h=sleepLogs[dateStr];
+    if(h!=null){ sleepSum+=h; sleepCount++; }
+  }
+  const score=totalCount>0?Math.round((totalScore/totalCount)/4*100):0;
+  const sleepAvg=sleepCount>0?Math.round((sleepSum/sleepCount)*10)/10:null;
+  // Hitta bästa och svagaste rutin
+  const ranked=routines.map(r=>{
+    const s=sums[r.key];
+    return {label:r.label,icon:r.icon,score:s.count>0?Math.round((s.sum/s.count)/4*100):0,count:s.count};
+  }).filter(r=>r.count>0).sort((a,b)=>b.score-a.score);
+  return {
+    weekKey:isoWeekKey(lastMon),
+    weekStart:isoDate(lastMon), weekEnd:isoDate(lastSun),
+    score, daysLoggedAny,
+    sleepAvg, sleepTarget:Number(userProfile.targetSleepHours)||8,
+    passCount, plannedCount,
+    best:ranked[0]||null, worst:ranked.length>1?ranked[ranked.length-1]:null
+  };
+}
+
+function renderWeekSummary(){
+  let el=document.getElementById('week-summary-banner');
+  if(!el){
+    const heroEl=document.getElementById('home-hero-content');
+    if(!heroEl||!heroEl.parentNode) return;
+    el=document.createElement('div');
+    el.id='week-summary-banner';
+    heroEl.parentNode.insertBefore(el,heroEl);
+  }
+  // Visa bara om idag är söndag (då pekar förra veckan på just slut) eller måndag/tisdag (fresh look)
+  const today=new Date(); const dow=today.getDay()||7;
+  const showDays=[7,1,2]; // sön, mån, tis
+  if(!showDays.includes(dow)){ el.innerHTML=''; el.style.display='none'; return; }
+  const summary=calcLastWeekSummary();
+  if(summary.daysLoggedAny===0){ el.innerHTML=''; el.style.display='none'; return; }
+  const dismissKey='wsDismiss_'+summary.weekKey;
+  if(localStorage.getItem(dismissKey)){ el.innerHTML=''; el.style.display='none'; return; }
+  const tier=progressTier(summary.score);
+  const bestStr=summary.best?`Bäst: ${summary.best.icon} ${summary.best.label}`:'';
+  const worstStr=summary.worst&&summary.worst.score<summary.best.score?`Svagast: ${summary.worst.icon} ${summary.worst.label}`:'';
+  const sleepStr=summary.sleepAvg!=null?`💤 ${fmtNum(summary.sleepAvg)}h snitt (mål ${fmtNum(summary.sleepTarget)})`:'';
+  const passStr=summary.plannedCount>0?`💪 ${summary.passCount}/${summary.plannedCount} pass enligt plan`:(summary.passCount>0?`💪 ${summary.passCount} pass`:'');
+  el.style.display='block';
+  el.innerHTML=`<div style="background:${tier.bg};border:1px solid ${tier.color}55;border-radius:var(--r);padding:12px 14px;margin-bottom:12px;position:relative">
+    <button onclick="dismissWeekSummary('${dismissKey}')" style="position:absolute;top:6px;right:8px;background:none;border:none;color:var(--text-3);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px" title="Stäng">×</button>
+    <div style="display:flex;align-items:center;gap:11px">
+      <div style="font-size:28px">${tier.emoji}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:800;color:var(--text-3);text-transform:uppercase">Förra veckan</div>
+        <div style="font-size:16px;font-weight:800;color:${tier.color}">${tier.label} · ${summary.score}/100</div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text-2);margin-top:8px;line-height:1.55">
+      ${[sleepStr,passStr,bestStr,worstStr].filter(Boolean).join(' · ')}
+    </div>
+  </div>`;
+}
+
+function dismissWeekSummary(key){
+  localStorage.setItem(key,'1');
+  renderWeekSummary();
 }
 
 function renderHomeStats(){
@@ -8282,7 +8532,7 @@ function saveWorkoutEdits(){
   workoutEditMode=false;
   renderWorkoutDetail();
   // Recompute alla vyer eftersom ändringen kan påverka mål/stats
-  renderHomeStats();renderStreak();renderPeakScore();renderProfileInfo();renderGoals();renderCalendar();
+  renderHomeStats();renderStreak();renderPeakScore();renderProgressScore();renderProfileInfo();renderGoals();renderCalendar();
   if(dayModalDate) renderDayCompletedList();
 }
 
