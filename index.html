@@ -476,7 +476,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div class="log-timer" id="log-timer">00:00</div>
     </div>
     <div id="log-exs" style="display:flex;flex-direction:column;gap:9px"></div>
-    <button class="btn-ghost" onclick="openModal('m-log-ex')"><i class="ti ti-plus"></i> Lägg till övning</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn-ghost" onclick="openModal('m-log-ex')" style="flex:1"><i class="ti ti-plus"></i> Lägg till övning</button>
+      <button class="btn-ghost" onclick="openCoachFromLog()" style="flex:1;color:var(--accent-4);border-color:var(--accent-4)"><i class="ti ti-sparkles"></i> Fråga coachen</button>
+    </div>
     <div class="card">
       <div style="font-size:13px;font-weight:700;margin-bottom:10px">Hur kändes passet?</div>
       <div class="feel-scale" id="feel-scale">
@@ -539,6 +542,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <span>AI-coach</span>
     <button class="btn-sm" onclick="clearCoachChat()" style="background:var(--surface-2);color:var(--text-2);font-size:11px" title="Rensa konversationen"><i class="ti ti-eraser"></i> Rensa</button>
   </div>
+  <div id="coach-active-banner" style="display:none"></div>
   <div id="coach-messages" style="display:flex;flex-direction:column;gap:10px"></div>
   <div class="coach-input-row"><button class="coach-send" id="coach-mic-btn" onclick="toggleCoachMic()" title="Spela in röst" style="background:var(--surface-2);color:var(--text-1)"><i class="ti ti-microphone"></i></button><input class="coach-input" id="coach-text" placeholder="Fråga din coach..." onkeydown="if(event.key==='Enter'){event.preventDefault();coachSend();}"><button class="coach-send" id="coach-send-btn" onclick="coachSend()"><i class="ti ti-arrow-up"></i></button></div>
 </div>
@@ -6586,6 +6590,26 @@ function renderCoach(){
   if(!el) return;
   const mic=document.getElementById('coach-mic-btn');
   if(mic) mic.style.display=coachMicSupported()?'':'none';
+  // Aktiv pass-banner: visa kontext + snabb återgång
+  const banner=document.getElementById('coach-active-banner');
+  if(banner){
+    if(activeWorkout){
+      const min=Math.floor((activeWorkout.elapsedSec||0)/60);
+      const done=(activeWorkout.loggedExs||[]).reduce((s,e)=>s+(e.sets||[]).filter(x=>x.done).length,0);
+      banner.style.display='block';
+      banner.innerHTML=`<div style="background:linear-gradient(135deg,rgba(232,32,10,0.08),rgba(185,107,0,0.08));border:1px solid #b96b0044;border-radius:var(--r);padding:10px 13px;margin-bottom:10px;display:flex;align-items:center;gap:10px">
+        <div style="font-size:18px">⚡</div>
+        <div style="flex:1;min-width:0;font-size:11px;line-height:1.45">
+          <div style="font-weight:800;color:var(--text-1)">Coach hjälper med pågående pass</div>
+          <div style="color:var(--text-2)">${escapeHtml(activeWorkout.passName||'Pass')} · ${min} min · ${done} set klara</div>
+        </div>
+        <button class="btn-sm" onclick="resumeActiveWorkout()" style="background:var(--accent-3);color:#fff;flex-shrink:0;font-size:11px"><i class="ti ti-arrow-back-up"></i> Tillbaka</button>
+      </div>`;
+    }else{
+      banner.style.display='none';
+      banner.innerHTML='';
+    }
+  }
   if(!coachMessages.length&&!coachThinking){
     el.innerHTML=`
       <div class="coach-bubble"><div class="coach-av"><i class="ti ti-sparkles"></i></div><div class="coach-c"><div class="coach-n">Coach</div><div class="coach-m">Hej ${escapeHtml(userProfile.name||'')}! Vad vill du jobba med idag? 💪</div></div></div>
@@ -6633,6 +6657,34 @@ function coachMsgHtml(m,i){
       <button class="btn-sm ${p.added?'':'btn-acc'}" onclick="${p.added?`startPlannedPass('${p.passId}')`:`coachScheduleToday(${i},this)`}" style="width:100%;${p.added?'background:var(--accent-3);color:#fff':''}">${p.added?'<i class="ti ti-player-play-filled"></i> Starta nu':'<i class="ti ti-calendar-plus"></i> Lägg till i dagens schema'}</button>
     </div>`;
   }
+  // Pågående pass: lägg till en övning i nuvarande loggning
+  if(m.injectEx){
+    const ex=m.injectEx;
+    const sub=[ex.muscle,ex.useBodyweight?'egen vikt':null,(ex.sets&&ex.reps)?`${ex.sets}×${ex.reps}`:null].filter(Boolean).join(' · ');
+    const disabled=ex.added||!activeWorkout;
+    const lbl=ex.added?'<i class="ti ti-check"></i> Tillagd i passet':(!activeWorkout?'⚠️ Inget pågående pass':'<i class="ti ti-plus"></i> Lägg till i pågående pass');
+    body+=`<div class="card" style="padding:10px 12px;margin:2px 0 2px 42px;border:1px solid var(--accent-4);display:flex;align-items:center;gap:10px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700">⚡ ${escapeHtml(ex.name||'')}</div>
+        ${sub?`<div style="font-size:11px;color:var(--text-3)">${escapeHtml(sub)}</div>`:''}
+      </div>
+      <button class="btn-sm ${disabled?'':'btn-acc'}" ${disabled?'disabled':''} onclick="coachInjectEx(${i},this)" style="flex-shrink:0;${ex.added?'background:var(--surface-2);color:var(--accent-3)':''}">${lbl}</button>
+    </div>`;
+  }
+  // Pågående pass: visa tutorial-video för en befintlig övning
+  if(m.tutorial){
+    const t=m.tutorial;
+    const ex=exercises.find(e=>e.name.toLowerCase().trim()===t.exName.toLowerCase().trim());
+    const canPlay=ex&&ex.videoUrl&&typeof parseVideoUrl==='function'&&parseVideoUrl(ex.videoUrl);
+    body+=`<div class="card" style="padding:10px 12px;margin:2px 0 2px 42px;border:1px solid var(--accent-4);display:flex;align-items:center;gap:10px">
+      <div style="font-size:18px">🎬</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700">${escapeHtml(t.exName)}</div>
+        <div style="font-size:11px;color:var(--text-3)">${canPlay?'Tutorial-video tillgänglig':'⚠️ Ingen video kopplad till denna övning'}</div>
+      </div>
+      ${canPlay?`<button class="btn-sm btn-acc" onclick="coachShowTutorial(${i})" style="flex-shrink:0"><i class="ti ti-player-play"></i> Visa</button>`:''}
+    </div>`;
+  }
   return body;
 }
 
@@ -6651,9 +6703,9 @@ async function coachSend(presetText){
     // Skicka konversationen (utan våra extra fält) till Claude
     const msgs=coachMessages.map(m=>({role:m.role,content:m.content}));
     const result=await callClaude(msgs,{system:coachSystemPrompt(),max_tokens:1500});
-    const {prose,exercises,pass}=parseCoachReply(result.text||'');
+    const {prose,exercises,pass,injectEx,tutorial}=parseCoachReply(result.text||'');
     coachThinking=false;
-    coachMessages.push({role:'assistant',content:prose||'(tomt svar)',exercises,pass});
+    coachMessages.push({role:'assistant',content:prose||'(tomt svar)',exercises,pass,injectEx,tutorial});
     saveCoachChat();
     renderCoach();
   }catch(e){
@@ -6668,7 +6720,7 @@ async function coachSend(presetText){
 // Bygg en kompakt, personlig system-prompt med användarens data
 function coachSystemPrompt(){
   const age=userProfile.birthDate?calcAge(userProfile.birthDate):userProfile.age;
-  const levelMap={beginner:'nybörjare',intermediate:'mellannivå',advanced:'avancerad'};
+  const levelMap={beginner:'nybörjare',intermediate:'mellannivå',advanced:'avancerad',elite:'elit'};
   const score=calcPeakScore(),tier=peakTier(score);
   const goals=(userGoals||[]).map(g=>`${g.name}${g.progress?` (${g.progress}%)`:''}`).join(', ')||'inga satta';
   const forms=(trainingForms||[]).map(f=>f.name).join(', ');
@@ -6677,6 +6729,51 @@ function coachSystemPrompt(){
     const d=w.date?new Date(w.date).toLocaleDateString('sv-SE'):'?';
     return `${d}: ${w.passName||'Pass'}${w.feel?` (känsla ${w.feel}/5)`:''}`;
   }).join('; ')||'inga loggade pass än';
+  // Rutin-kontext (senaste 3 dagarna) — hjälper coachen med välmående-perspektiv
+  const today=new Date();
+  const rtLines=[];
+  for(let i=0;i<3;i++){
+    const d=new Date(today.getFullYear(),today.getMonth(),today.getDate()-i);
+    const iso=isoDate(d);
+    const logs=routineLogs[iso];
+    if(logs){
+      const parts=activeRoutines().map(r=>logs[r.key]?`${r.label}=${logs[r.key]}/4`:null).filter(Boolean).join(', ');
+      if(parts) rtLines.push(`${iso}: ${parts}`);
+    }
+  }
+  const routinesCtx=rtLines.length?rtLines.join(' | '):'inga rutiner loggade än';
+
+  // Kontext för pågående pass — gör coachen kapabel att hjälpa under passet
+  let activeCtx='';
+  if(activeWorkout){
+    const exList=(activeWorkout.loggedExs||[]).map((ex,i)=>{
+      const done=(ex.sets||[]).filter(s=>s.done).length;
+      const total=(ex.sets||[]).length;
+      const hasVideo=exercises.find(e=>e.id===ex.exId&&e.videoUrl);
+      return `${i+1}. ${ex.name}${ex.muscle?' ('+ex.muscle+')':''} — ${done}/${total} set klara${hasVideo?' [har tutorial-video]':''}`;
+    }).join('\n  ');
+    const elapsedMin=Math.floor((activeWorkout.elapsedSec||0)/60);
+    activeCtx=`
+
+⚡ ANVÄNDAREN HAR ETT PÅGÅENDE PASS just nu:
+- Passnamn: ${activeWorkout.passName||'Pass'} (${activeWorkout.passFormName||'okänd typ'})
+- Tid sedan start: ${elapsedMin} min
+- Övningar:
+  ${exList||'(inga övningar)'}
+
+Under pågående pass kan du HJÄLPA på dessa sätt:
+1. Lägga till EN NY ÖVNING i det pågående passet (för att variera, ersätta, eller addera).
+   Format (avsluta svaret med detta block, EXAKT giltig JSON):
+   <INJECTEX>{"name":"Svenskt namn","primaryForm":"strength|running|cycling|mobility|group","muscle":"Ben|Rygg|...","useBodyweight":false,"sets":3,"reps":10}</INJECTEX>
+   Övningen läggs då till i banken och injectas sist i pågående pass — användaren får en knapp för att lägga till.
+
+2. Visa befintlig tutorial-video för en av övningarna i passet (endast om "[har tutorial-video]"-markörn finns ovan).
+   Format: <TUTORIAL>{"exName":"Exakt namn från listan ovan"}</TUTORIAL>
+   Användaren får en knapp för att öppna videon i appen.
+
+3. Svara på allmänna frågor om teknik, paus, modifikationer, motivation — direkt i prosan utan block.`;
+  }
+
   return `Du är en personlig, uppmuntrande AI-träningscoach i appen Peak Fitness. Svara ALLTID på svenska, koncist och konkret. Använd emojis sparsamt.
 
 ANVÄNDARENS PROFIL:
@@ -6686,11 +6783,12 @@ ANVÄNDARENS PROFIL:
 - Mål: ${goals}
 - Träningsformer: ${forms}
 - Senaste pass: ${recent}
+- Rutin-loggar senaste dagarna: ${routinesCtx}
 - Övningar som REDAN finns i banken: ${exNames||'(tom)'}
-
+${activeCtx}
 RIKTLINJER:
 - Var personlig och referera till användarens faktiska data när det är relevant.
-- Föreslå INTE övningar som redan finns i banken (listan ovan).
+- Föreslå INTE övningar som redan finns i banken (listan ovan) — om du gör det, hänvisa till den befintliga.
 - När du föreslår KONKRETA NYA övningar som användaren kan lägga till i sin bank: avsluta
   ditt svar med EXAKT ett block i detta format (inget annat efter):
   <ÖVNINGAR>[{"name":"Svenskt namn","primaryForm":"strength|running|cycling|mobility|group","muscle":"Bröst|Rygg|Ben|Axlar|Armar|Bål|Höft|Ryggrad|Kondition|Explosivitet|Rörlighet","useBodyweight":false,"defaultSets":3,"defaultReps":10,"note":"kort tips"}]</ÖVNINGAR>
@@ -6701,13 +6799,14 @@ RIKTLINJER:
   <PASS>{"name":"Passnamn","primaryForm":"strength|running|cycling|mobility|group","exercises":[{"name":"Svenskt namn","muscle":"Ben|Rygg|...","useBodyweight":false,"sets":4,"reps":8}]}</PASS>
   Då får användaren en knapp för att lägga passet i dagens schema. Endast giltig JSON. Använd
   detta block för hela pass; <ÖVNINGAR> bara när du föreslår lösa övningar till banken. Du kan
-  ha med båda blocken om det passar (först eventuell <ÖVNINGAR>, sedan <PASS>).`;
+  ha med båda blocken om det passar (först eventuell <ÖVNINGAR>, sedan <PASS>).
+- Distans i km decimal (200m=0.2, 400m=0.4). Tid i decimal minuter (1.8 = 1 min 48 sek).`;
 }
 
-// Plocka ut ev. övningsförslag + pass-förslag ur svaret och strippa blocken ur prosan
+// Plocka ut ev. övningsförslag + pass-förslag + injecta-i-pågående-pass + tutorial ur svaret
 function parseCoachReply(text){
   const clean=s=>s.trim().replace(/[“”„‟]/g,'"').replace(/,(\s*[}\]])/g,'$1');
-  // <ÖVNINGAR> = array av lösa övningar
+  // <ÖVNINGAR> = array av lösa övningar för banken
   let exercises=[];
   const em=text.match(/<ÖVNINGAR>([\s\S]*?)<\/ÖVNINGAR>/i);
   if(em){
@@ -6727,8 +6826,86 @@ function parseCoachReply(text){
     try{ const o=JSON.parse(json); if(o&&o.name&&Array.isArray(o.exercises)) pass={...o,added:false}; }
     catch(e){ console.warn('Kunde inte tolka coach-pass:',e.message); }
   }
-  const prose=text.replace(/<ÖVNINGAR>[\s\S]*?<\/ÖVNINGAR>/i,'').replace(/<PASS>[\s\S]*?<\/PASS>/i,'').trim();
-  return {prose,exercises,pass};
+  // <INJECTEX> = övning att lägga till i pågående pass
+  let injectEx=null;
+  const im=text.match(/<INJECTEX>([\s\S]*?)<\/INJECTEX>/i);
+  if(im){
+    let json=clean(im[1]);
+    const a=json.indexOf('{'),b=json.lastIndexOf('}');
+    if(a>=0&&b>a) json=json.slice(a,b+1);
+    try{ const o=JSON.parse(json); if(o&&o.name) injectEx={...o,added:false}; }
+    catch(e){ console.warn('Kunde inte tolka inject-ex:',e.message); }
+  }
+  // <TUTORIAL> = öppna befintlig tutorial-video
+  let tutorial=null;
+  const tm=text.match(/<TUTORIAL>([\s\S]*?)<\/TUTORIAL>/i);
+  if(tm){
+    let json=clean(tm[1]);
+    const a=json.indexOf('{'),b=json.lastIndexOf('}');
+    if(a>=0&&b>a) json=json.slice(a,b+1);
+    try{ const o=JSON.parse(json); if(o&&o.exName) tutorial={exName:o.exName}; }
+    catch(e){ console.warn('Kunde inte tolka tutorial:',e.message); }
+  }
+  const prose=text
+    .replace(/<ÖVNINGAR>[\s\S]*?<\/ÖVNINGAR>/i,'')
+    .replace(/<PASS>[\s\S]*?<\/PASS>/i,'')
+    .replace(/<INJECTEX>[\s\S]*?<\/INJECTEX>/i,'')
+    .replace(/<TUTORIAL>[\s\S]*?<\/TUTORIAL>/i,'')
+    .trim();
+  return {prose,exercises,pass,injectEx,tutorial};
+}
+
+// Bypass nav-intercept så coachen kan öppnas mitt i ett pass utan paus-prompt
+function openCoachFromLog(){
+  _navBypass=true;
+  navigate('page-coach');
+  _navBypass=false;
+}
+
+// Lägg till en övning både i banken OCH i pågående pass (loggedExs)
+function coachInjectEx(msgIdx,btn){
+  const m=coachMessages[msgIdx]; if(!m||!m.injectEx) return;
+  if(m.injectEx.added) return;
+  if(!activeWorkout){ alert('Inget pågående pass — starta ett pass först.'); return; }
+  const exData=m.injectEx;
+  const pf=exData.primaryForm==='bodyweight'?'strength':(exData.primaryForm||'strength');
+  const isBw=!!exData.useBodyweight;
+  const sub=isBw?['Egen vikt']:[];
+  const {ex}=ensureSharedExercise({
+    name:exData.name,
+    primaryForm:pf,
+    muscle:exData.muscle||(pf==='running'||pf==='cycling'?'Kondition':'Bål'),
+    useBodyweight:isBw,
+    defaultSets:exData.sets||exData.defaultSets||3,
+    defaultReps:exData.reps||exData.defaultReps||10,
+    subTags:sub,
+    note:exData.note||''
+  });
+  // Inject:a sist i pågående loggning
+  const cat=(pf==='running'||pf==='cycling')?'cardio':(pf==='mobility')?'mobility':'strength';
+  const sets=exData.sets||ex.defaultSets||3;
+  const reps=exData.reps||ex.defaultReps||10;
+  let defW=0,defR=reps;
+  if(cat==='cardio'){ defW=ex.defaultDistance||0; defR=ex.defaultTime||reps; }
+  else if(ex.useBodyweight){ defW=userProfile.weightKg||0; }
+  else if(ex.defaultWeight){ defW=ex.defaultWeight; }
+  loggedExs.push({exId:ex.id,videoUrl:ex.videoUrl||null,name:ex.name,muscle:ex.muscle,cat,sets:Array(sets).fill(null).map(()=>({w:defW,r:defR,done:false}))});
+  m.injectEx.added=true;
+  saveCoachChat();
+  saveState();
+  renderCoach();
+  renderLogExs();
+  showToast(`⚡ "${escapeHtml(ex.name)}" tillagd i pågående pass`);
+}
+
+// Öppna tutorial-video för en befintlig övning (måste finnas i banken + ha videoUrl)
+function coachShowTutorial(msgIdx){
+  const m=coachMessages[msgIdx]; if(!m||!m.tutorial) return;
+  const name=m.tutorial.exName.toLowerCase().trim();
+  const ex=exercises.find(e=>e.name.toLowerCase().trim()===name);
+  if(!ex){ alert('Övningen "'+m.tutorial.exName+'" hittades inte i banken.'); return; }
+  if(!ex.videoUrl){ alert('Ingen tutorial-video kopplad till "'+ex.name+'".'); return; }
+  if(typeof openVideoPlayer==='function') openVideoPlayer(ex.id);
 }
 
 // Lägg till en av coachens föreslagna övningar i banken
