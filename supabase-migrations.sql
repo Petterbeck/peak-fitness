@@ -288,6 +288,48 @@ create policy routine_logs_own on public.routine_logs for all using (user_id = a
 alter table public.planned_workouts add column if not exists sort_order int default 0;
 
 -- ------------------------------------------------------------
+-- 15. SLEEP + NUTRITION-LOGGAR (sömn i timmar, utökad kostlogg)
+-- ------------------------------------------------------------
+-- Sömn-mål + kostlogg-läge bor på profilen
+alter table public.profiles add column if not exists target_sleep_hours numeric default 8;
+alter table public.profiles add column if not exists nutrition_log_mode text default 'simple'; -- 'simple' eller 'advanced'
+
+-- En rad per dag per användare: antal timmar sömn
+create table if not exists public.sleep_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  date date not null,
+  hours numeric not null check (hours >= 0 and hours <= 24),
+  updated_at timestamptz default now(),
+  unique(user_id, date)
+);
+create index if not exists sleep_logs_user_date_idx on public.sleep_logs(user_id, date);
+alter table public.sleep_logs enable row level security;
+drop policy if exists sleep_logs_own on public.sleep_logs;
+create policy sleep_logs_own on public.sleep_logs for all using (user_id = auth.uid());
+
+-- En rad per dag per användare: kostlogg (avancerad). Vid enkelt läge använder vi
+-- routine_logs som vanligt (routine_key='food', score 1-4).
+create table if not exists public.nutrition_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  date date not null,
+  meal_breakfast boolean default false,
+  meal_snack_morning boolean default false,
+  meal_lunch boolean default false,
+  meal_snack_afternoon boolean default false,
+  meal_dinner boolean default false,
+  meal_supper boolean default false,
+  quality_score int check (quality_score between 1 and 4),
+  updated_at timestamptz default now(),
+  unique(user_id, date)
+);
+create index if not exists nutrition_logs_user_date_idx on public.nutrition_logs(user_id, date);
+alter table public.nutrition_logs enable row level security;
+drop policy if exists nutrition_logs_own on public.nutrition_logs;
+create policy nutrition_logs_own on public.nutrition_logs for all using (user_id = auth.uid());
+
+-- ------------------------------------------------------------
 -- 14. STRAVA TOKENS (OAuth-tokens per användare, en rad per användare)
 -- ------------------------------------------------------------
 create table if not exists public.strava_tokens (
