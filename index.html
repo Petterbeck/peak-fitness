@@ -598,8 +598,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <div id="rt-rows" style="display:flex;flex-direction:column;gap:8px"></div>
   </div>
-  <div class="section-title" style="padding:0 2px">Veckans pass</div>
+  <div class="section-title" style="padding:0 2px;display:flex;align-items:center;justify-content:space-between">
+    <span>Veckans pass</span>
+    <button class="btn-sm" onclick="openGarminImport()" style="background:var(--surface-2);color:var(--text-2);font-size:11px"><i class="ti ti-cloud-upload"></i> Importera från Garmin</button>
+  </div>
   <div id="hist-workout-list" style="display:flex;flex-direction:column;gap:6px"></div>
+</div>
+
+<div class="modal" id="m-garmin-import" onclick="closeBg(event,'m-garmin-import')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Importera pass från Garmin</div>
+    <div id="gi-input-view">
+      <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">
+        Exportera ett pass från <b>Garmin Connect</b> (webb eller mobil-app) som <b>TCX</b>- eller <b>GPX</b>-fil och ladda upp här.<br><br>
+        <span style="color:var(--text-3);font-size:11px">💡 I Garmin Connect: öppna aktiviteten → ⚙️-meny → "Exportera original" (FIT) eller "Exportera till TCX". Välj TCX för bästa kompatibilitet.</span>
+      </div>
+      <label for="gi-file" style="display:block;border:2px dashed var(--border);border-radius:var(--r);padding:24px;text-align:center;cursor:pointer;background:var(--surface-2)">
+        <i class="ti ti-upload" style="font-size:28px;color:var(--accent-4);display:block;margin-bottom:6px"></i>
+        <div style="font-weight:700;font-size:14px">Klicka eller dra fil hit</div>
+        <div style="font-size:11px;color:var(--text-3);margin-top:3px">.tcx eller .gpx · max 10 MB</div>
+      </label>
+      <input id="gi-file" type="file" accept=".tcx,.gpx,application/xml,text/xml" onchange="handleGarminFile(this.files&&this.files[0])" style="display:none">
+      <div id="gi-status" style="font-size:12px;color:var(--text-2);margin-top:10px;min-height:16px;text-align:center"></div>
+    </div>
+    <div id="gi-preview-view" style="display:none">
+      <div id="gi-preview-content"></div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn-primary" onclick="confirmGarminImport()" style="flex:1"><i class="ti ti-check"></i> Importera passet</button>
+        <button class="btn-ghost" onclick="resetGarminImport()">Avbryt</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- PROFIL -->
@@ -4294,7 +4323,13 @@ async function syncToCloud(silent){
       const {error}=await supa.from('workout_history').upsert(workoutHistory.map(w=>({
         id:w.id,user_id:uid,pass_name:w.passName||'',form_name:w.formName||'',form_cat:w.formCat||'',
         performed_at:w.date,duration_seconds:toInt(w.duration,0),feel:toInt(w.feel),note:w.note||'',
-        exercises:w.exercises||[]
+        exercises:w.exercises||[],
+        source:w.source||null,
+        distance_km:toNum(w.distanceKm),
+        elevation_gain:toNum(w.elevationGain),
+        avg_hr:toInt(w.avgHr),
+        avg_pace_sec_per_km:toNum(w.avgPaceSecPerKm),
+        laps:w.laps||null
       })));
       if(error) throw error;
     }
@@ -4412,7 +4447,13 @@ async function loadFromCloud(silent){
     }));
     workoutHistory=(whRes.data||[]).map(w=>({
       id:w.id,passName:w.pass_name,formName:w.form_name,formCat:w.form_cat,
-      date:w.performed_at,duration:w.duration_seconds,feel:w.feel,note:w.note,exercises:w.exercises||[]
+      date:w.performed_at,duration:w.duration_seconds,feel:w.feel,note:w.note,exercises:w.exercises||[],
+      source:w.source||null,
+      distanceKm:w.distance_km!=null?Number(w.distance_km):null,
+      elevationGain:w.elevation_gain!=null?Number(w.elevation_gain):null,
+      avgHr:w.avg_hr!=null?Number(w.avg_hr):null,
+      avgPaceSecPerKm:w.avg_pace_sec_per_km!=null?Number(w.avg_pace_sec_per_km):null,
+      laps:w.laps||null
     }));
     // Egna rutiner (1-5 user-defined routines)
     if(rtRes&&Array.isArray(rtRes.data)){
@@ -7764,8 +7805,49 @@ function renderWorkoutDetail(){
   }
   // Övningar
   const exList=document.getElementById('wd-exercises');
+  // Garmin-detalj-block överst om passet kommer från Garmin
+  let garminHtml='';
+  if(w.source&&w.source.startsWith('garmin')){
+    const km=w.distanceKm!=null?fmtNum(Math.round(w.distanceKm*100)/100)+' km':'–';
+    const elev=w.elevationGain!=null?Math.round(w.elevationGain)+' m':'–';
+    const pace=w.avgPaceSecPerKm?fmtPace(w.avgPaceSecPerKm):'–';
+    const hr=w.avgHr?w.avgHr+' bpm':'–';
+    const lapsHtml=(w.laps||[]).map(l=>{
+      const lkm=fmtNum(Math.round((l.distanceM/1000)*100)/100);
+      const tMin=Math.floor((l.durationSec||0)/60);
+      const tSec=(l.durationSec||0)%60;
+      return `<tr>
+        <td style="padding:5px 6px;font-weight:700">${l.idx}</td>
+        <td style="padding:5px 6px;text-align:right">${lkm}</td>
+        <td style="padding:5px 6px;text-align:right">${tMin}:${String(tSec).padStart(2,'0')}</td>
+        <td style="padding:5px 6px;text-align:right">${l.elevationGain||0}</td>
+        <td style="padding:5px 6px;text-align:right">${fmtPace(l.avgPaceSecPerKm)}</td>
+        <td style="padding:5px 6px;text-align:right">${l.avgHr||'–'}</td>
+      </tr>`;
+    }).join('');
+    garminHtml=`<div class="card" style="padding:13px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:var(--text-3);text-transform:uppercase;margin-bottom:8px"><i class="ti ti-cloud-download" style="font-size:14px"></i> Från Garmin</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase">Distans</div><div style="font-size:15px;font-weight:800">${km}</div></div>
+        <div><div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase">Höjdmeter</div><div style="font-size:15px;font-weight:800">${elev}</div></div>
+        <div><div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase">Snittempo</div><div style="font-size:15px;font-weight:800">${pace}</div></div>
+        <div><div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase">Snittpuls</div><div style="font-size:15px;font-weight:800">${hr}</div></div>
+      </div>
+      ${lapsHtml?`<details style="margin-top:10px"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:var(--accent)">Visa varv-detaljer (${(w.laps||[]).length})</summary>
+        <table style="width:100%;font-size:11px;margin-top:8px;border-collapse:collapse">
+          <thead><tr style="background:var(--surface-2);color:var(--text-3);text-transform:uppercase;font-size:9px">
+            <th style="padding:5px 6px;text-align:left">#</th>
+            <th style="padding:5px 6px;text-align:right">Dist (km)</th>
+            <th style="padding:5px 6px;text-align:right">Tid</th>
+            <th style="padding:5px 6px;text-align:right">Höjd (m)</th>
+            <th style="padding:5px 6px;text-align:right">Tempo</th>
+            <th style="padding:5px 6px;text-align:right">Puls</th>
+          </tr></thead><tbody>${lapsHtml}</tbody>
+        </table></details>`:''}
+    </div>`;
+  }
   if(!w.exercises||!w.exercises.length){
-    exList.innerHTML='<div style="text-align:center;color:var(--text-3);font-size:13px;padding:14px">Inga övningar registrerade</div>';
+    exList.innerHTML=garminHtml+'<div style="text-align:center;color:var(--text-3);font-size:13px;padding:14px">Inga övningar registrerade</div>';
   }else{
     exList.innerHTML=w.exercises.map((ex,exIdx)=>{
       const isCardio=ex.cat==='cardio';
@@ -7816,6 +7898,7 @@ function renderWorkoutDetail(){
         ${workoutEditMode?setsHtml:'<div style="padding:6px 13px">'+setsHtml+'</div>'}
       </div>`;
     }).join('');
+    exList.innerHTML=garminHtml+exList.innerHTML;
   }
   // Anteckning + bottom actions
   const noteContainer=document.getElementById('wd-note');
@@ -7967,6 +8050,263 @@ function removePlanAndRefresh(planId){
   renderHomeHero();
 }
 
+/* ========== GARMIN-IMPORT (TCX/GPX → workout_history) ========== */
+let giParsed=null; // tillfälligt state under preview-fasen
+
+function openGarminImport(){
+  giParsed=null;
+  const giInput=document.getElementById('gi-file');
+  if(giInput) giInput.value='';
+  const status=document.getElementById('gi-status');
+  if(status){ status.textContent=''; status.style.color='var(--text-2)'; }
+  document.getElementById('gi-input-view').style.display='';
+  document.getElementById('gi-preview-view').style.display='none';
+  openModal('m-garmin-import');
+}
+function resetGarminImport(){
+  giParsed=null;
+  document.getElementById('gi-input-view').style.display='';
+  document.getElementById('gi-preview-view').style.display='none';
+  const f=document.getElementById('gi-file'); if(f) f.value='';
+}
+
+async function handleGarminFile(file){
+  if(!file) return;
+  const status=document.getElementById('gi-status');
+  const MAX=10*1024*1024;
+  if(file.size>MAX){ status.style.color='#e8200a'; status.textContent='Filen är för stor — max 10 MB'; return; }
+  status.style.color='var(--text-2)';
+  status.textContent='⏳ Läser filen…';
+  try{
+    const text=await file.text();
+    const ext=(file.name.toLowerCase().match(/\.(tcx|gpx)$/)||[])[1]||'';
+    giParsed=parseGarminFile(text,ext);
+    if(!giParsed) throw new Error('Kunde inte tolka filen — väntade TCX eller GPX-format');
+    giParsed.fileName=file.name;
+    renderGarminPreview();
+    document.getElementById('gi-input-view').style.display='none';
+    document.getElementById('gi-preview-view').style.display='';
+  }catch(e){
+    console.error('Garmin-parse fel:',e);
+    status.style.color='#e8200a';
+    status.textContent='⚠ '+e.message;
+  }
+}
+
+function parseGarminFile(text,ext){
+  if(!text||!text.trim().startsWith('<')) throw new Error('Endast XML-baserade filer (TCX/GPX) stöds just nu');
+  const doc=new DOMParser().parseFromString(text,'application/xml');
+  const err=doc.querySelector('parsererror'); if(err) throw new Error('Filen är inte giltig XML');
+  const rootName=doc.documentElement.nodeName.toLowerCase();
+  if(rootName.includes('trainingcenterdatabase')||doc.getElementsByTagName('Activity').length){
+    return parseTcx(doc);
+  }
+  if(rootName==='gpx'||doc.getElementsByTagName('gpx').length){
+    return parseGpx(doc);
+  }
+  throw new Error('Okänd XML-typ — väntade TCX eller GPX');
+}
+
+// Hjälp: text content från första taggen (inom optional parent)
+function tagText(el,name){ const e=el.getElementsByTagName(name)[0]; return e?e.textContent.trim():''; }
+function tagNumber(el,name){ const t=tagText(el,name); const n=parseFloat(t); return isNaN(n)?null:n; }
+
+function parseTcx(doc){
+  const activity=doc.getElementsByTagName('Activity')[0];
+  if(!activity) throw new Error('Ingen aktivitet hittades i filen');
+  const sport=activity.getAttribute('Sport')||'Other';
+  const idText=tagText(activity,'Id');
+  const date=idText||(new Date().toISOString());
+  const lapEls=activity.getElementsByTagName('Lap');
+  if(!lapEls.length) throw new Error('Inga varv (Lap) hittades i filen');
+  let totalDist=0,totalTime=0,totalElev=0;
+  let hrWeighted=0,hrTime=0;
+  const laps=[];
+  for(let i=0;i<lapEls.length;i++){
+    const lap=lapEls[i];
+    const time=tagNumber(lap,'TotalTimeSeconds')||0;
+    const dist=tagNumber(lap,'DistanceMeters')||0;
+    const hrEl=lap.getElementsByTagName('AverageHeartRateBpm')[0];
+    const avgHr=hrEl?Math.round(parseFloat(hrEl.getElementsByTagName('Value')[0]?.textContent||'0'))||null:null;
+    // Höjdmeter: summera positiva förändringar i trackpoints med liten brusfilter
+    const trackpoints=lap.getElementsByTagName('Trackpoint');
+    let elev=0,prevAlt=null;
+    for(let j=0;j<trackpoints.length;j++){
+      const altText=tagText(trackpoints[j],'AltitudeMeters');
+      if(!altText) continue;
+      const alt=parseFloat(altText);
+      if(prevAlt!=null && alt>prevAlt+0.5) elev+=alt-prevAlt;
+      prevAlt=alt;
+    }
+    const avgPace=dist>0?time/(dist/1000):null; // sek/km
+    laps.push({idx:i+1,distanceM:dist,durationSec:time,elevationGain:Math.round(elev),avgHr,avgPaceSecPerKm:avgPace});
+    totalDist+=dist; totalTime+=time; totalElev+=elev;
+    if(avgHr){ hrWeighted+=avgHr*time; hrTime+=time; }
+  }
+  return {
+    source:'garmin-tcx', sport,
+    date,
+    distanceKm:totalDist/1000,
+    durationSec:totalTime,
+    elevationGain:Math.round(totalElev),
+    avgHr:hrTime>0?Math.round(hrWeighted/hrTime):null,
+    avgPaceSecPerKm:totalDist>0?totalTime/(totalDist/1000):null,
+    laps
+  };
+}
+
+function parseGpx(doc){
+  const trk=doc.getElementsByTagName('trk')[0];
+  if(!trk) throw new Error('Ingen <trk> hittades i GPX-filen');
+  const name=tagText(trk,'name')||'Garmin-pass';
+  const pts=trk.getElementsByTagName('trkpt');
+  if(!pts.length) throw new Error('Inga trackpoints i GPX-filen');
+  // GPX har vanligtvis inga laps — vi bildar EN lap av hela banan
+  let totalDist=0,totalElev=0;
+  let prevLat=null,prevLon=null,prevAlt=null;
+  let hrSum=0,hrCount=0;
+  let firstTime=null,lastTime=null;
+  for(let i=0;i<pts.length;i++){
+    const p=pts[i];
+    const lat=parseFloat(p.getAttribute('lat')); const lon=parseFloat(p.getAttribute('lon'));
+    const ele=parseFloat(tagText(p,'ele'));
+    const t=tagText(p,'time'); if(t){ if(!firstTime) firstTime=t; lastTime=t; }
+    const hrEl=p.getElementsByTagName('hr')[0]||p.querySelectorAll('[*|hr]')[0];
+    const hr=hrEl?parseFloat(hrEl.textContent):null;
+    if(hr){ hrSum+=hr; hrCount++; }
+    if(prevLat!=null){
+      // Haversine för avstånd mellan två GPS-punkter
+      const R=6371000;
+      const dLat=(lat-prevLat)*Math.PI/180;
+      const dLon=(lon-prevLon)*Math.PI/180;
+      const a=Math.sin(dLat/2)**2+Math.cos(prevLat*Math.PI/180)*Math.cos(lat*Math.PI/180)*Math.sin(dLon/2)**2;
+      totalDist+=2*R*Math.asin(Math.sqrt(a));
+      if(!isNaN(ele)&&prevAlt!=null&&ele>prevAlt+0.5) totalElev+=ele-prevAlt;
+    }
+    prevLat=lat; prevLon=lon; if(!isNaN(ele)) prevAlt=ele;
+  }
+  const durationSec=(firstTime&&lastTime)?((new Date(lastTime)-new Date(firstTime))/1000):0;
+  const avgHr=hrCount>0?Math.round(hrSum/hrCount):null;
+  const avgPace=totalDist>0?durationSec/(totalDist/1000):null;
+  return {
+    source:'garmin-gpx', sport:'Running',
+    date:firstTime||new Date().toISOString(),
+    distanceKm:totalDist/1000,
+    durationSec:Math.round(durationSec),
+    elevationGain:Math.round(totalElev),
+    avgHr,
+    avgPaceSecPerKm:avgPace,
+    laps:[{idx:1,distanceM:Math.round(totalDist),durationSec:Math.round(durationSec),elevationGain:Math.round(totalElev),avgHr,avgPaceSecPerKm:avgPace}]
+  };
+}
+
+// Sport-namn → träningsform
+function sportToFormCat(sport){
+  const s=(sport||'').toLowerCase();
+  if(s.includes('bike')||s.includes('cycl')) return {cat:'cardio',formName:'Cykling',primary:'cycling'};
+  if(s.includes('walk')) return {cat:'cardio',formName:'Promenad',primary:'running'};
+  if(s.includes('hik')) return {cat:'cardio',formName:'Vandring',primary:'running'};
+  if(s.includes('run')||s.includes('löp')) return {cat:'cardio',formName:'Löpning',primary:'running'};
+  return {cat:'cardio',formName:'Löpning',primary:'running'};
+}
+
+// Formatera tempo (sek/km → "5:24/km")
+function fmtPace(secPerKm){
+  if(!secPerKm||!Number.isFinite(secPerKm)) return '–';
+  const m=Math.floor(secPerKm/60); const s=Math.round(secPerKm%60);
+  return `${m}:${String(s).padStart(2,'0')}/km`;
+}
+
+function renderGarminPreview(){
+  if(!giParsed) return;
+  const p=giParsed;
+  const meta=sportToFormCat(p.sport);
+  const dur=p.durationSec;
+  const durStr=`${Math.floor(dur/3600)?Math.floor(dur/3600)+' h ':''}${String(Math.floor((dur%3600)/60)).padStart(2,'0')}:${String(dur%60).padStart(2,'0')}`;
+  const dateLocal=p.date?new Date(p.date).toLocaleString('sv-SE',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
+  const lapsHtml=(p.laps||[]).map(l=>{
+    const km=(l.distanceM/1000);
+    const tMin=Math.floor(l.durationSec/60);
+    const tSec=l.durationSec%60;
+    return `<tr>
+      <td style="padding:5px 6px;font-weight:700">${l.idx}</td>
+      <td style="padding:5px 6px;text-align:right">${fmtNum(Math.round(km*100)/100)} km</td>
+      <td style="padding:5px 6px;text-align:right">${tMin}:${String(tSec).padStart(2,'0')}</td>
+      <td style="padding:5px 6px;text-align:right">${l.elevationGain||0} m</td>
+      <td style="padding:5px 6px;text-align:right">${fmtPace(l.avgPaceSecPerKm)}</td>
+      <td style="padding:5px 6px;text-align:right">${l.avgHr?l.avgHr+' bpm':'–'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('gi-preview-content').innerHTML=`
+    <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">
+      <div>
+        <div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase">Sport</div>
+        <div style="font-size:16px;font-weight:800">${escapeHtml(p.sport)} → ${meta.formName}</div>
+        <div style="font-size:11px;color:var(--text-3)">${escapeHtml(dateLocal)}</div>
+      </div>
+      <label class="field-label" style="margin-top:4px">Passnamn (kan justeras)</label>
+      <input class="field-input" id="gi-name" value="${escapeHtml(meta.formName)} ${dateLocal.split(' ')[0]||''}">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">
+        <div><div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase">Distans</div><div style="font-size:16px;font-weight:800">${fmtNum(Math.round(p.distanceKm*100)/100)} km</div></div>
+        <div><div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase">Tid</div><div style="font-size:16px;font-weight:800">${durStr}</div></div>
+        <div><div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase">Höjdmeter</div><div style="font-size:16px;font-weight:800">${p.elevationGain||0} m</div></div>
+        <div><div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase">Snittempo</div><div style="font-size:16px;font-weight:800">${fmtPace(p.avgPaceSecPerKm)}</div></div>
+        ${p.avgHr?`<div><div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase">Snittpuls</div><div style="font-size:16px;font-weight:800">${p.avgHr} bpm</div></div>`:''}
+        <div><div style="font-size:10px;font-weight:800;color:var(--text-3);text-transform:uppercase">Varv</div><div style="font-size:16px;font-weight:800">${(p.laps||[]).length}</div></div>
+      </div>
+      ${lapsHtml?`<details style="margin-top:8px"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:var(--accent)">Visa varv-detaljer (${p.laps.length})</summary>
+        <table style="width:100%;font-size:11px;margin-top:8px;border-collapse:collapse">
+          <thead><tr style="background:var(--surface-2);color:var(--text-3);text-transform:uppercase;font-size:9px">
+            <th style="padding:5px 6px;text-align:left">#</th>
+            <th style="padding:5px 6px;text-align:right">Distans</th>
+            <th style="padding:5px 6px;text-align:right">Tid</th>
+            <th style="padding:5px 6px;text-align:right">Höjd</th>
+            <th style="padding:5px 6px;text-align:right">Tempo</th>
+            <th style="padding:5px 6px;text-align:right">Puls</th>
+          </tr></thead><tbody>${lapsHtml}</tbody>
+        </table></details>`:''}
+    </div>
+    <div style="font-size:11px;color:var(--text-3);margin-top:8px;line-height:1.5">💡 Efter import hamnar passet i Min logg utan känsla. Öppna passet och rata det när du är klar för dagen — samtidigt som du loggar dina rutiner.</div>
+  `;
+}
+
+function confirmGarminImport(){
+  if(!giParsed) return;
+  const meta=sportToFormCat(giParsed.sport);
+  const customName=document.getElementById('gi-name')?.value.trim();
+  // Bygg en cardio-övning med varv som "sets" (för bakåtkompat med befintlig render),
+  // PLUS de utökade fälten på själva passet.
+  const lapSets=(giParsed.laps||[]).map(l=>({
+    w:Math.round((l.distanceM/1000)*100)/100, // km
+    r:Math.round((l.durationSec/60)*100)/100, // decimal min
+    done:true
+  }));
+  const workout={
+    id:crypto.randomUUID(),
+    date:giParsed.date||new Date().toISOString(),
+    passName:customName||(meta.formName+' (Garmin)'),
+    formName:meta.formName,formCat:meta.cat,
+    duration:giParsed.durationSec||0,
+    feel:null,note:'',
+    source:giParsed.source,
+    distanceKm:giParsed.distanceKm,
+    elevationGain:giParsed.elevationGain,
+    avgHr:giParsed.avgHr,
+    avgPaceSecPerKm:giParsed.avgPaceSecPerKm,
+    laps:giParsed.laps||[],
+    exercises:[{name:meta.formName,cat:'cardio',sets:lapSets}]
+  };
+  workoutHistory.push(workout);
+  saveState();
+  closeModal('m-garmin-import');
+  giParsed=null;
+  renderHistory();
+  renderHomeStats();
+  renderStreak();
+  renderPeakScore();
+  showToast(`✓ "${escapeHtml(workout.passName)}" importerat — öppna i Min logg för att rata`,4000);
+}
+
 /* ========== MIN TRÄNINGSLOGG (page-history) ========== */
 let currentHistoryWeek=(function(){
   const today=new Date();
@@ -8077,10 +8417,20 @@ function renderHistory(){
     const dayLabel=`${SWE_DAYS_SHORT[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}`;
     const feel=w.feel?['😩','😐','🙂','💪','🔥'][w.feel-1]:'';
     const cat=w.formCat||'strength';
+    const isGarmin=w.source&&w.source.startsWith('garmin');
+    // För Garmin-pass: visa distans + tempo istället för antal övningar
+    let meta=`${(w.exercises||[]).length} övn`;
+    if(isGarmin){
+      const km=w.distanceKm?fmtNum(Math.round(w.distanceKm*100)/100)+' km':'';
+      const pace=w.avgPaceSecPerKm?fmtPace(w.avgPaceSecPerKm):'';
+      meta=[km,pace].filter(Boolean).join(' · ')||meta;
+    }
+    const dotIcon=isGarmin?'ti-cloud-check':'ti-check';
+    const needsRate=!w.feel?' <span style="background:rgba(232,32,10,0.12);color:#e8200a;font-size:9px;font-weight:800;padding:2px 6px;border-radius:8px;margin-left:4px">⭐ rata</span>':'';
     return `
     <div class="sched-row" style="cursor:pointer" onclick="showWorkoutDetail('${w.id}')">
-      <div class="sched-dot done"><i class="ti ti-check" style="font-size:13px"></i></div>
-      <div class="sched-info"><div class="sched-day">${dayLabel} ${feel}</div><div class="sched-name">${w.passName||'Pass'} · ${(w.exercises||[]).length} övn</div></div>
+      <div class="sched-dot done"><i class="ti ${dotIcon}" style="font-size:13px"></i></div>
+      <div class="sched-info"><div class="sched-day">${dayLabel} ${feel}${needsRate}</div><div class="sched-name">${w.passName||'Pass'} · ${meta}</div></div>
       <i class="ti ti-chevron-right" style="color:var(--text-3);font-size:18px"></i>
     </div>`;
   }).join('');

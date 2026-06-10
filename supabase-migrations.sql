@@ -287,6 +287,19 @@ create policy routine_logs_own on public.routine_logs for all using (user_id = a
 -- ------------------------------------------------------------
 alter table public.planned_workouts add column if not exists sort_order int default 0;
 
+-- ------------------------------------------------------------
+-- 13. WORKOUT_HISTORY — Garmin-import: utökade fält per pass
+-- ------------------------------------------------------------
+-- source: 'manual' (default) eller 'garmin-tcx'/'garmin-gpx'/'strava'
+-- distance_km, elevation_gain (m), avg_hr (bpm), avg_pace_sec_per_km — pass-totaler
+-- laps jsonb: [{idx, distance_m, duration_sec, elevation_gain, avg_hr, avg_pace_sec_per_km}]
+alter table public.workout_history add column if not exists source text;
+alter table public.workout_history add column if not exists distance_km numeric;
+alter table public.workout_history add column if not exists elevation_gain numeric;
+alter table public.workout_history add column if not exists avg_hr int;
+alter table public.workout_history add column if not exists avg_pace_sec_per_km numeric;
+alter table public.workout_history add column if not exists laps jsonb;
+
 -- ============================================================
 -- Ladda om PostgREST schema-cache (så nya kolumner syns direkt)
 -- ============================================================
