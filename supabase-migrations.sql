@@ -288,6 +288,26 @@ create policy routine_logs_own on public.routine_logs for all using (user_id = a
 alter table public.planned_workouts add column if not exists sort_order int default 0;
 
 -- ------------------------------------------------------------
+-- 14. STRAVA TOKENS (OAuth-tokens per användare, en rad per användare)
+-- ------------------------------------------------------------
+create table if not exists public.strava_tokens (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  access_token text not null,
+  refresh_token text not null,
+  expires_at bigint not null,
+  athlete_id bigint,
+  athlete_firstname text,
+  athlete_lastname text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.strava_tokens enable row level security;
+-- Användaren kan SE sin egen rad (för att kolla anslutningsstatus + atletnamn).
+-- Inga write-policies → bara service_role i Vercel-funktioner får skriva.
+drop policy if exists strava_tokens_own_select on public.strava_tokens;
+create policy strava_tokens_own_select on public.strava_tokens for select using (user_id = auth.uid());
+
+-- ------------------------------------------------------------
 -- 13. WORKOUT_HISTORY — Garmin-import: utökade fält per pass
 -- ------------------------------------------------------------
 -- source: 'manual' (default) eller 'garmin-tcx'/'garmin-gpx'/'strava'

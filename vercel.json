@@ -8,6 +8,18 @@
     },
     "api/transcribe.js": {
       "maxDuration": 30
+    },
+    "api/strava/connect.js": {
+      "maxDuration": 10
+    },
+    "api/strava/callback.js": {
+      "maxDuration": 10
+    },
+    "api/strava/activities.js": {
+      "maxDuration": 20
+    },
+    "api/strava/import.js": {
+      "maxDuration": 20
     }
   }
 }
