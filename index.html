@@ -386,6 +386,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="tab-schema" style="display:flex;flex-direction:column;gap:12px">
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn-ghost" onclick="openScheduleProgram()" style="flex:1 1 130px;font-size:11px;font-weight:700;color:var(--accent-3);border-color:var(--accent-3);padding:8px 6px"><i class="ti ti-calendar-plus"></i> Schemalägg</button>
+        <button class="btn-ghost" onclick="openShareSchedule()" style="flex:1 1 130px;font-size:11px;font-weight:700;color:var(--accent-4);border-color:var(--accent-4);padding:8px 6px"><i class="ti ti-share"></i> Dela plan</button>
         <button class="btn-ghost" onclick="openRemoveProgram()" style="flex:1 1 130px;font-size:11px;font-weight:700;color:#b96b00;border-color:#b96b0044;padding:8px 6px"><i class="ti ti-calendar-minus"></i> Avschemalägg</button>
         <button class="btn-ghost" onclick="openDeleteProgram()" style="flex:1 1 130px;font-size:11px;font-weight:700;color:#e8200a;border-color:#e8200a44;padding:8px 6px"><i class="ti ti-trash"></i> Radera program</button>
       </div>
@@ -953,6 +954,48 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 
 <!-- Dela program (välj tagg) -->
+<div class="modal" id="m-share-schedule" onclick="closeBg(event,'m-share-schedule')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Dela min plan</div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Välj datumintervall — alla planerade pass, deras pass-typer, övningar och tutorial-länkar paketeras. Mottagaren kan välja när passen ska börja i deras kalender.</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div>
+          <label class="field-label">Från datum</label>
+          <input class="field-input" id="shs-from" type="date" onchange="updateShareSchedulePreview()">
+        </div>
+        <div>
+          <label class="field-label">Till och med</label>
+          <input class="field-input" id="shs-to" type="date" onchange="updateShareSchedulePreview()">
+        </div>
+      </div>
+      <div id="shs-preview" style="font-size:12px;color:var(--text-2);line-height:1.55;background:var(--surface-2);padding:10px 12px;border-radius:8px"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="confirmShareSchedule()" style="flex:1"><i class="ti ti-share"></i> Skapa delningskod</button>
+        <button class="btn-ghost" onclick="closeModal('m-share-schedule')">Avbryt</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="m-import-schedule" onclick="closeBg(event,'m-import-schedule')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Importera plan</div>
+    <div id="isp-summary" style="font-size:12px;color:var(--text-2);line-height:1.55;background:var(--surface-2);padding:10px 12px;border-radius:8px;margin-bottom:14px"></div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label class="field-label">Startdatum i din kalender</label>
+        <input class="field-input" id="isp-start-date" type="date" onchange="updateImportScheduleShift()">
+        <div id="isp-shift-preview" style="font-size:11px;color:var(--text-3);margin-top:6px;line-height:1.5"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="confirmImportSchedule()" style="flex:1"><i class="ti ti-download"></i> Importera i min kalender</button>
+        <button class="btn-ghost" onclick="closeModal('m-import-schedule')">Avbryt</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="m-share-program" onclick="closeBg(event,'m-share-program')">
   <div class="modal-sheet"><div class="modal-handle"></div>
     <div class="modal-title">Dela program</div>
@@ -3855,6 +3898,159 @@ async function confirmShareProgram(){
   }
 }
 
+/* ========== DELA KALENDER (schedule) ========== */
+function openShareSchedule(){
+  const today=new Date();
+  const twoWeeksLater=new Date(today); twoWeeksLater.setDate(today.getDate()+13);
+  document.getElementById('shs-from').value=isoDate(today);
+  document.getElementById('shs-to').value=isoDate(twoWeeksLater);
+  updateShareSchedulePreview();
+  openModal('m-share-schedule');
+}
+
+function collectScheduleInRange(fromIso,toIso){
+  const planned=plannedWorkouts.filter(pw=>pw.date&&pw.date>=fromIso&&pw.date<=toIso)
+    .sort((a,b)=>(a.date<b.date?-1:a.date>b.date?1:((a.sortOrder||0)-(b.sortOrder||0))));
+  const passIds=new Set(planned.filter(pw=>pw.passId).map(pw=>pw.passId));
+  const passList=[];
+  const exIds=new Set();
+  passIds.forEach(id=>{
+    const r=findPass(id); if(!r) return;
+    passList.push(r);
+    (r.pass.exerciseRefs||[]).forEach(ref=>{ if(ref.exId) exIds.add(ref.exId); });
+  });
+  return {planned,passList,exIds};
+}
+
+function updateShareSchedulePreview(){
+  const from=document.getElementById('shs-from').value;
+  const to=document.getElementById('shs-to').value;
+  const preview=document.getElementById('shs-preview');
+  if(!from||!to){ preview.innerHTML='⏳ Välj datum'; return; }
+  if(to<from){ preview.innerHTML='⚠ Slutdatum måste vara ≥ startdatum'; return; }
+  const {planned,passList,exIds}=collectScheduleInRange(from,to);
+  const dayCount=Math.round((new Date(to+'T00:00:00')-new Date(from+'T00:00:00'))/86400000)+1;
+  if(!planned.length){
+    preview.innerHTML=`<span style="color:var(--text-3)">Inga planerade pass mellan ${from} och ${to}.</span>`;
+    return;
+  }
+  const restCount=planned.filter(pw=>pw.isRest).length;
+  const passCount=planned.length-restCount;
+  preview.innerHTML=`<b>${dayCount} dagar</b> · <b>${passCount}</b> planerade pass${restCount?` + ${restCount} vilodagar`:''} · <b>${passList.length}</b> pass-typer · <b>${exIds.size}</b> övningar (med tutorial-länkar där de finns)`;
+}
+
+async function confirmShareSchedule(){
+  const from=document.getElementById('shs-from').value;
+  const to=document.getElementById('shs-to').value;
+  if(!from||!to||to<from){ alert('Välj giltigt datumintervall'); return; }
+  if(!supa||!currentUser){ alert('Du måste vara inloggad för att dela'); return; }
+  const {planned,passList,exIds}=collectScheduleInRange(from,to);
+  if(!planned.length){ alert('Inga planerade pass i intervallet — inget att dela'); return; }
+  try{
+    // Serialisera passtyper med original-id så vi kan mappa refs vid import
+    const serializedPasses=passList.map(r=>({
+      originalId:r.pass.id,
+      ...serializePassForShare(r.pass,r.form)
+    }));
+    const plannedPayload=planned.map(pw=>({
+      date:pw.date,passId:pw.passId||null,isRest:!!pw.isRest,
+      sortOrder:pw.sortOrder||0,notes:pw.notes||''
+    }));
+    const payload={
+      type:'schedule',version:1,
+      dateFrom:from,dateTo:to,
+      planned:plannedPayload,
+      passes:serializedPasses
+    };
+    const title=`${from} → ${to} (${planned.length-planned.filter(p=>p.isRest).length} pass)`;
+    const code=await createShare('schedule',title,payload);
+    closeModal('m-share-schedule');
+    const restCount=planned.filter(pw=>pw.isRest).length;
+    const passCount=planned.length-restCount;
+    showShareResult(code,`Din plan ${from} → ${to} är delad. ${passCount} planerade pass${restCount?` + ${restCount} vilodagar`:''}, ${passList.length} pass-typer och ${exIds.size} övningar ingår. Mottagaren väljer själv startdatum vid import.`);
+  }catch(e){
+    console.error('Dela schema-fel:',e);
+    alert('Kunde inte dela planen: '+e.message);
+  }
+}
+
+/* Import-flöde för schedule — visa preview + låt användaren välja startdatum */
+let pendingScheduleImport=null;
+
+function openImportSchedulePreview(){
+  if(!pendingScheduleImport) return;
+  const p=pendingScheduleImport.payload;
+  const dayCount=Math.round((new Date(p.dateTo+'T00:00:00')-new Date(p.dateFrom+'T00:00:00'))/86400000)+1;
+  const restCount=p.planned.filter(x=>x.isRest).length;
+  const passCount=p.planned.length-restCount;
+  const exNames=new Set();
+  p.passes.forEach(pt=>(pt.exercises||[]).forEach(ex=>exNames.add(ex.name)));
+  const sample=p.passes.slice(0,4).map(pt=>escapeHtml(pt.name)).join(', ')+(p.passes.length>4?'…':'');
+  document.getElementById('isp-summary').innerHTML=
+    `<b>${dayCount} dagar</b> · <b>${passCount}</b> planerade pass${restCount?` + ${restCount} vilodagar`:''}<br>`
+    +`<b>${p.passes.length}</b> pass-typer: <span style="color:var(--text-3)">${sample}</span><br>`
+    +`<b>${exNames.size}</b> unika övningar (med tutorial-länkar där finns)`;
+  document.getElementById('isp-start-date').value=todayIso();
+  updateImportScheduleShift();
+  openModal('m-import-schedule');
+}
+
+function updateImportScheduleShift(){
+  if(!pendingScheduleImport) return;
+  const start=document.getElementById('isp-start-date').value;
+  const p=pendingScheduleImport.payload;
+  const preview=document.getElementById('isp-shift-preview');
+  if(!start){ preview.innerHTML='⏳ Välj startdatum'; return; }
+  const offset=Math.round((new Date(start+'T00:00:00')-new Date(p.dateFrom+'T00:00:00'))/86400000);
+  const daysInRange=Math.round((new Date(p.dateTo+'T00:00:00')-new Date(p.dateFrom+'T00:00:00'))/86400000);
+  const newEnd=new Date(start+'T00:00:00'); newEnd.setDate(newEnd.getDate()+daysInRange);
+  preview.innerHTML=`Ursprunglig period: <b>${p.dateFrom}</b> → <b>${p.dateTo}</b><br>Din period: <b>${start}</b> → <b>${isoDate(newEnd)}</b> ${offset===0?'(exakt samma datum)':(offset>0?`(förskjuten +${offset} dag${offset===1?'':'ar'})`:`(förskjuten ${offset} dag${offset===-1?'':'ar'})`)}`;
+}
+
+async function confirmImportSchedule(){
+  if(!pendingScheduleImport) return;
+  const start=document.getElementById('isp-start-date').value;
+  if(!start){ alert('Välj startdatum'); return; }
+  const p=pendingScheduleImport.payload;
+  const shareCode=pendingScheduleImport.code;
+  const ownerId=pendingScheduleImport.ownerId;
+  const offset=Math.round((new Date(start+'T00:00:00')-new Date(p.dateFrom+'T00:00:00'))/86400000);
+  // Steg 1: importera pass-typer och bygg map original-id → nytt lokalt id
+  const passIdMap={};
+  let newPassCount=0,newExCount=0;
+  for(const passData of p.passes){
+    const {pass,newEx}=importSharedPass(passData,shareCode,ownerId);
+    passIdMap[passData.originalId]=pass.id;
+    newPassCount++;
+    newExCount+=newEx;
+  }
+  // Steg 2: skapa plannedWorkouts med förskjutna datum, mappa passId via passIdMap
+  let addedPlanned=0;
+  for(const pw of p.planned){
+    const orig=new Date(pw.date+'T00:00:00');
+    const shifted=new Date(orig); shifted.setDate(orig.getDate()+offset);
+    const shiftedIso=isoDate(shifted);
+    if(pw.isRest){
+      plannedWorkouts.push({id:crypto.randomUUID(),date:shiftedIso,passId:null,isRest:true,sortOrder:pw.sortOrder||0,notes:pw.notes||'Vila'});
+      addedPlanned++;
+    }else{
+      const localPassId=passIdMap[pw.passId];
+      if(!localPassId) continue;
+      const r=findPass(localPassId); if(!r) continue;
+      plannedWorkouts.push({id:crypto.randomUUID(),date:shiftedIso,passId:localPassId,formId:r.form.id,sortOrder:pw.sortOrder||0,notes:pw.notes||''});
+      addedPlanned++;
+    }
+  }
+  saveState();
+  renderPassList(); renderExercises();
+  if(typeof renderCalendar==='function') renderCalendar();
+  if(typeof renderWeekSchedule==='function') renderWeekSchedule();
+  if(typeof renderHomeHero==='function') renderHomeHero();
+  closeModal('m-import-schedule');
+  pendingScheduleImport=null;
+  alert(`✅ Planen importerad!\n\n${addedPlanned} datum tillagda i din kalender från ${start}.\n${newPassCount} pass-typer + ${newExCount} nya övningar tillagda.`);
+}
+
 // --- Visa delningsresultat ---
 let lastShareCode='';
 function showShareResult(code,desc){
@@ -3911,6 +4107,13 @@ async function confirmImportShare(){
     const share=data[0];
     const payload=share.payload;
     const ownerId=share.owner_id;
+    // Schedule-delning har ett eget preview-flöde: användaren väljer startdatum
+    if(payload.type==='schedule'){
+      pendingScheduleImport={payload,code:share.code,ownerId};
+      closeModal('m-import-share');
+      openImportSchedulePreview();
+      return;
+    }
     let result;
     if(payload.type==='pass'){
       result=importSharedPass(payload.pass,share.code,ownerId);
