@@ -288,6 +288,25 @@ create policy routine_logs_own on public.routine_logs for all using (user_id = a
 alter table public.planned_workouts add column if not exists sort_order int default 0;
 
 -- ------------------------------------------------------------
+-- 16. DATA_SNAPSHOTS (rullande 7-dagars full-state-backups)
+-- ------------------------------------------------------------
+-- En rad per (user_id, snapshot_date) med hela användarens data-tillstånd
+-- som JSON. Skapas 1x/dag vid app-start om senaste > 24h gammal.
+create table if not exists public.data_snapshots (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  snapshot_date date not null,
+  payload jsonb not null,
+  meta jsonb, -- {passCount, exCount, plannedCount, historyCount} för snabb-preview
+  created_at timestamptz default now(),
+  unique(user_id, snapshot_date)
+);
+create index if not exists data_snapshots_user_idx on public.data_snapshots(user_id, snapshot_date desc);
+alter table public.data_snapshots enable row level security;
+drop policy if exists data_snapshots_own on public.data_snapshots;
+create policy data_snapshots_own on public.data_snapshots for all using (user_id = auth.uid());
+
+-- ------------------------------------------------------------
 -- 15. SLEEP + NUTRITION-LOGGAR (sömn i timmar, utökad kostlogg)
 -- ------------------------------------------------------------
 -- Sömn-mål + kostlogg-läge bor på profilen

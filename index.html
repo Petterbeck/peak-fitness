@@ -696,8 +696,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <button class="btn-sm" onclick="document.getElementById('import-data-file').click()" style="flex:1;min-width:120px;background:var(--surface-2);color:var(--text-1)"><i class="ti ti-upload"></i> Återställ från fil</button>
       <input type="file" id="import-data-file" accept="application/json,.json" onchange="importDataFromFile(this)" style="display:none">
     </div>
-    <button class="btn-sm" onclick="restoreAutoBackup()" style="width:100%;margin-top:6px;background:var(--surface-2);color:var(--text-2);font-size:11px"><i class="ti ti-history"></i> Återställ senaste auto-backup</button>
+    <button class="btn-sm" onclick="restoreAutoBackup()" style="width:100%;margin-top:6px;background:var(--surface-2);color:var(--text-2);font-size:11px"><i class="ti ti-history"></i> Återställ senaste auto-backup (lokal)</button>
+    <button class="btn-sm" onclick="openSnapshotsModal()" style="width:100%;margin-top:6px;background:var(--surface-2);color:var(--text-2);font-size:11px"><i class="ti ti-cloud-download"></i> Molnbackups (senaste 7 dagar)</button>
     <div id="backup-status" style="font-size:11px;color:var(--text-2);margin-top:8px;min-height:14px;text-align:center"></div>
+    <details style="margin-top:10px">
+      <summary style="font-size:11px;color:var(--text-3);cursor:pointer;padding:4px 0">Avancerat — städa molnet</summary>
+      <div style="font-size:11px;color:var(--text-3);line-height:1.5;margin:6px 0 8px">Sync raderar aldrig data från molnet — bara upsertar. Om du vill rensa bort rader som du raderat lokalt (efter t.ex. "Radera program") — använd denna knapp. Kräver bekräftelse och tar en snapshot först.</div>
+      <button class="btn-sm" onclick="openCleanCloudModal()" style="width:100%;background:var(--surface-2);color:#b96b00;border:1px solid #b96b0044;font-size:11px"><i class="ti ti-broom"></i> Städa moln (bekräftelse krävs)</button>
+    </details>
   </div>
   <div class="card" style="margin-top:4px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
@@ -1046,6 +1052,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <button class="btn-primary" onclick="confirmImportShare()" style="flex:1" id="ish-btn"><i class="ti ti-download"></i> Hämta delning</button>
         <button class="btn-ghost" onclick="closeModal('m-import-share')">Avbryt</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="m-snapshots" onclick="closeBg(event,'m-snapshots')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Molnbackups — senaste 7 dagar</div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">En snapshot av all din data tas automatiskt 1 gång/dag när du öppnar appen. Klicka <b>Återställ</b> på en snapshot för att gå tillbaka till det tillståndet.</div>
+    <div id="snap-list"></div>
+    <button class="btn-ghost" onclick="closeModal('m-snapshots')" style="margin-top:10px">Stäng</button>
+  </div>
+</div>
+
+<div class="modal" id="m-clean-cloud" onclick="closeBg(event,'m-clean-cloud')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title">Städa moln</div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:12px">Detta raderar rader i molnet som INTE finns i din lokala data — dvs saker du raderat lokalt (t.ex. via "Radera program"). En snapshot tas innan städningen så det går att återställa.</div>
+    <div id="cc-list" style="background:var(--surface-2);border-radius:8px;padding:8px 12px;margin-bottom:10px"></div>
+    <div id="cc-status" style="font-size:12px;line-height:1.5;margin-bottom:10px;min-height:20px"></div>
+    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px;margin-bottom:12px;line-height:1.4">
+      <input type="checkbox" id="cc-consent" onchange="ccConsentChange(this)" style="width:18px;height:18px;accent-color:#e8200a;margin-top:2px;flex-shrink:0">
+      <span>Ja, jag bekräftar att jag vill radera raderna ovan från molnet.</span>
+    </label>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" id="cc-confirm-btn" onclick="confirmCleanCloud()" style="flex:1;background:#e8200a" disabled><i class="ti ti-broom"></i> Städa nu</button>
+      <button class="btn-ghost" onclick="closeModal('m-clean-cloud')">Avbryt</button>
     </div>
   </div>
 </div>
@@ -4518,6 +4550,229 @@ async function deleteCloudOrphans(table,localIds,uid){
   }
 }
 
+/* ========== STÄDA MOLN (separat från sync — kräver explicit bekräftelse) ========== */
+// Räkna vad som skulle raderas per tabell (utan att radera). Returnerar en översikt.
+async function previewCloudCleanup(){
+  if(!supa||!currentUser) throw new Error('Inte inloggad');
+  const uid=currentUser.id;
+  const allPasses=[];
+  trainingForms.forEach(tf=>tf.passTypes.forEach(pt=>allPasses.push(pt)));
+  const checks=[
+    ['pass_types',       allPasses.map(p=>p.id)],
+    ['exercises',        exercises.map(ex=>ex.id)],
+    ['training_forms',   trainingForms.map(tf=>tf.id)],
+    ['planned_workouts', plannedWorkouts.map(pw=>pw.id)],
+    ['user_goals',       userGoals.map(g=>g.id)],
+    ['routines',         customRoutines.map(r=>r.id)],
+    ['workout_history',  workoutHistory.map(w=>w.id)]
+  ];
+  const results=[];
+  for(const [table,localIds] of checks){
+    try{
+      const {data:cloudRows,error}=await supa.from(table).select('id').eq('user_id',uid);
+      if(error){ results.push({table,cloudCount:0,localCount:localIds.length,toDelete:0,error:error.message}); continue; }
+      const localSet=new Set(localIds);
+      const toDelete=(cloudRows||[]).filter(r=>!localSet.has(r.id)).length;
+      results.push({table,cloudCount:(cloudRows||[]).length,localCount:localIds.length,toDelete});
+    }catch(e){ results.push({table,cloudCount:0,localCount:localIds.length,toDelete:0,error:e.message}); }
+  }
+  return results;
+}
+
+// Utför städningen — INGEN säkerhetströskel eftersom användaren har bekräftat.
+async function cleanCloudOrphans(){
+  if(!supa||!currentUser) throw new Error('Inte inloggad');
+  const uid=currentUser.id;
+  const allPasses=[];
+  trainingForms.forEach(tf=>tf.passTypes.forEach(pt=>allPasses.push(pt)));
+  const tables=[
+    ['pass_types',       allPasses.map(p=>p.id)],
+    ['exercises',        exercises.map(ex=>ex.id)],
+    ['training_forms',   trainingForms.map(tf=>tf.id)],
+    ['planned_workouts', plannedWorkouts.map(pw=>pw.id)],
+    ['user_goals',       userGoals.map(g=>g.id)],
+    ['routines',         customRoutines.map(r=>r.id)],
+    ['workout_history',  workoutHistory.map(w=>w.id)]
+  ];
+  let totalDeleted=0;
+  for(const [table,localIds] of tables){
+    try{
+      const {data:cloudRows,error}=await supa.from(table).select('id').eq('user_id',uid);
+      if(error) continue;
+      const localSet=new Set(localIds);
+      const toDelete=(cloudRows||[]).filter(r=>!localSet.has(r.id)).map(r=>r.id);
+      if(!toDelete.length) continue;
+      const {error:delErr}=await supa.from(table).delete().in('id',toDelete);
+      if(!delErr){ totalDeleted+=toDelete.length; console.log(`Städa moln: raderade ${toDelete.length} rader från ${table}`); }
+    }catch(e){ console.warn('Städning av',table,'misslyckades:',e.message); }
+  }
+  return totalDeleted;
+}
+
+async function openCleanCloudModal(){
+  const status=document.getElementById('cc-status');
+  const list=document.getElementById('cc-list');
+  const confirmBtn=document.getElementById('cc-confirm-btn');
+  status.textContent='⏳ Räknar…';
+  list.innerHTML='';
+  document.getElementById('cc-consent').checked=false;
+  confirmBtn.disabled=true;
+  openModal('m-clean-cloud');
+  try{
+    const results=await previewCloudCleanup();
+    let total=0;
+    list.innerHTML=results.map(r=>{
+      total+=r.toDelete;
+      const color=r.toDelete>0?'#e8200a':'var(--text-3)';
+      return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid var(--border);font-size:12px">
+        <span>${r.table}</span>
+        <span style="color:${color};font-weight:700">${r.toDelete>0?`raderar ${r.toDelete}`:'inget att rensa'} <span style="color:var(--text-3);font-weight:400;font-size:11px">(moln ${r.cloudCount}, lokal ${r.localCount})</span></span>
+      </div>`;
+    }).join('');
+    if(!total){
+      status.style.color='var(--accent-3)';
+      status.textContent='✓ Molnet är redan i synk med din lokala data — inget att städa.';
+      confirmBtn.disabled=true;
+    }else{
+      status.style.color='var(--text-2)';
+      status.innerHTML=`<b>${total}</b> rader kommer raderas i molnet. Detta går inte att ångra utan snapshot-återställning. Bocka i rutan nedan för att bekräfta.`;
+    }
+  }catch(e){
+    status.style.color='#e8200a';
+    status.textContent='⚠ '+e.message;
+  }
+}
+
+function ccConsentChange(el){
+  document.getElementById('cc-confirm-btn').disabled=!el.checked;
+}
+
+async function confirmCleanCloud(){
+  const btn=document.getElementById('cc-confirm-btn');
+  const status=document.getElementById('cc-status');
+  btn.disabled=true;
+  status.textContent='⏳ Städar molnet…';
+  try{
+    // Ta först en snapshot innan vi städar — så det går att återställa vid misstag
+    await createDataSnapshot('pre-clean');
+    const n=await cleanCloudOrphans();
+    status.style.color='var(--accent-3)';
+    status.textContent=`✓ ${n} rader raderade från molnet. En snapshot togs innan städningen (Profil → Backups).`;
+    setTimeout(()=>closeModal('m-clean-cloud'),2000);
+  }catch(e){
+    status.style.color='#e8200a';
+    status.textContent='⚠ '+e.message;
+    btn.disabled=false;
+  }
+}
+
+/* ========== DAGLIGA SNAPSHOTS ========== */
+async function createDataSnapshot(reason){
+  if(!supa||!currentUser) return null;
+  try{
+    const uid=currentUser.id;
+    const today=todayIso();
+    const payload={
+      trainingForms,exercises,plannedWorkouts,workoutHistory,userProfile,userGoals,
+      customRoutines,routineLogs,sleepLogs,nutritionLogs
+    };
+    const meta={
+      formCount:trainingForms.length,
+      passCount:trainingForms.reduce((s,f)=>s+(f.passTypes||[]).length,0),
+      exCount:exercises.length,
+      plannedCount:plannedWorkouts.length,
+      historyCount:workoutHistory.length,
+      goalsCount:userGoals.length,
+      routinesCount:customRoutines.length,
+      reason:reason||'daily'
+    };
+    const {error}=await supa.from('data_snapshots').upsert({
+      user_id:uid,snapshot_date:today,payload,meta,created_at:new Date().toISOString()
+    },{onConflict:'user_id,snapshot_date'});
+    if(error){ console.warn('Snapshot misslyckades:',error.message); return null; }
+    // Håll bara 7 senaste — radera äldre
+    const {data:oldRows}=await supa.from('data_snapshots').select('snapshot_date').eq('user_id',uid).order('snapshot_date',{ascending:false});
+    if(Array.isArray(oldRows)&&oldRows.length>7){
+      const toDelete=oldRows.slice(7).map(r=>r.snapshot_date);
+      await supa.from('data_snapshots').delete().eq('user_id',uid).in('snapshot_date',toDelete);
+    }
+    return today;
+  }catch(e){ console.warn('Snapshot exception:',e.message); return null; }
+}
+
+// Kör en gång per app-load: om ingen snapshot idag, skapa en.
+async function maybeCreateDailySnapshot(){
+  if(!supa||!currentUser) return;
+  if(!trainingForms.length&&!workoutHistory.length) return; // inget att backa upp än
+  try{
+    const {data,error}=await supa.from('data_snapshots').select('snapshot_date').eq('user_id',currentUser.id).order('snapshot_date',{ascending:false}).limit(1);
+    if(error) return;
+    const last=(data&&data[0])?data[0].snapshot_date:null;
+    if(last===todayIso()) return; // finns redan för idag
+    await createDataSnapshot('daily');
+  }catch(e){ /* tyst */ }
+}
+
+async function listDataSnapshots(){
+  if(!supa||!currentUser) return [];
+  try{
+    const {data,error}=await supa.from('data_snapshots').select('id,snapshot_date,meta,created_at').eq('user_id',currentUser.id).order('snapshot_date',{ascending:false});
+    if(error) return [];
+    return data||[];
+  }catch(e){ return []; }
+}
+
+async function restoreDataSnapshot(id){
+  if(!supa||!currentUser){ alert('Inte inloggad'); return; }
+  const {data,error}=await supa.from('data_snapshots').select('payload,snapshot_date').eq('id',id).maybeSingle();
+  if(error||!data){ alert('Kunde inte hämta snapshot: '+(error?.message||'ej hittad')); return; }
+  const p=data.payload||{};
+  if(!confirm(`Återställ hela din data till snapshotten från ${data.snapshot_date}?\n\nDetta ersätter all lokal data. Molnet uppdateras automatiskt via sync.`)) return;
+  // Ta en säkerhets-snapshot innan vi byter state
+  await createDataSnapshot('pre-restore');
+  // Byt lokala arrays
+  if(Array.isArray(p.trainingForms)){ trainingForms.length=0; p.trainingForms.forEach(x=>trainingForms.push(x)); }
+  if(Array.isArray(p.exercises)){ exercises.length=0; p.exercises.forEach(x=>exercises.push(x)); }
+  if(Array.isArray(p.plannedWorkouts)) plannedWorkouts=p.plannedWorkouts;
+  if(Array.isArray(p.workoutHistory)) workoutHistory=p.workoutHistory;
+  if(Array.isArray(p.userGoals)){ userGoals.length=0; p.userGoals.forEach(x=>userGoals.push(x)); }
+  if(Array.isArray(p.customRoutines)) customRoutines=p.customRoutines;
+  if(p.routineLogs&&typeof p.routineLogs==='object') routineLogs=p.routineLogs;
+  if(p.sleepLogs&&typeof p.sleepLogs==='object') sleepLogs=p.sleepLogs;
+  if(p.nutritionLogs&&typeof p.nutritionLogs==='object') nutritionLogs=p.nutritionLogs;
+  if(p.userProfile) Object.assign(userProfile,p.userProfile);
+  saveState();
+  renderPassList(); renderExercises();
+  if(typeof renderCalendar==='function') renderCalendar();
+  if(typeof renderWeekSchedule==='function') renderWeekSchedule();
+  if(typeof renderHomeHero==='function') renderHomeHero();
+  if(typeof renderHistory==='function') renderHistory();
+  closeModal('m-snapshots');
+  alert(`✓ Återställt till ${data.snapshot_date}. Auto-sync uppdaterar molnet inom några sekunder.`);
+}
+
+async function openSnapshotsModal(){
+  const list=document.getElementById('snap-list');
+  list.innerHTML='<div style="padding:14px;text-align:center;color:var(--text-3);font-size:12px">⏳ Hämtar snapshots…</div>';
+  openModal('m-snapshots');
+  const rows=await listDataSnapshots();
+  if(!rows.length){
+    list.innerHTML='<div style="padding:14px;text-align:center;color:var(--text-3);font-size:12px">Inga snapshots än — den första skapas nästa gång du öppnar appen.</div>';
+    return;
+  }
+  list.innerHTML=rows.map(r=>{
+    const m=r.meta||{};
+    const dt=new Date(r.created_at).toLocaleString('sv-SE',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    return `<div class="card" style="padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700">${r.snapshot_date} <span style="font-size:10px;color:var(--text-3);font-weight:400">${escapeHtml(dt)} · ${escapeHtml(m.reason||'daily')}</span></div>
+        <div style="font-size:11px;color:var(--text-3)">${m.passCount||0} pass · ${m.exCount||0} övningar · ${m.historyCount||0} loggade · ${m.plannedCount||0} planerade</div>
+      </div>
+      <button class="btn-sm" onclick="restoreDataSnapshot('${r.id}')" style="background:var(--accent);color:#fff;font-size:11px;flex-shrink:0"><i class="ti ti-history"></i> Återställ</button>
+    </div>`;
+  }).join('');
+}
+
 async function syncToCloud(silent){
   if(!supa||!currentUser){if(!silent) setSyncStatus('Inte inloggad','err');return false;}
   if(!silent) setSyncStatus('Synkar...');
@@ -4595,16 +4850,10 @@ async function syncToCloud(silent){
       })));
       if(error) throw error;
     }
-    // Radera moln-rader som tagits bort lokalt — BARA på manuell synk (silent=false).
-    // Auto-debouncad bakgrundssynk får ALDRIG radera, för då kan en stale-instans
-    // (annan flik/enhet med gammalt state) plötsligt nuka nytt arbete. Vill du städa
-    // molnet — tryck "Synka till molnet" i Profil.
-    if(!silent && cloudLoadComplete){
-      await deleteCloudOrphans('pass_types',allPasses.map(p=>p.id),uid);
-      await deleteCloudOrphans('exercises',exercises.map(ex=>ex.id),uid);
-      await deleteCloudOrphans('training_forms',trainingForms.map(tf=>tf.id),uid);
-      await deleteCloudOrphans('planned_workouts',plannedWorkouts.map(pw=>pw.id),uid);
-    }
+    // Sync raderar ALDRIG moln-rader — bara upsertar. Det förhindrar hela
+    // klassen av data-förlust där lokal state hunnit bli tom (fresh session, race,
+    // etc) och sedan raderar allt på molnet. För att städa bort borttagna rader:
+    // separat "Städa moln"-knapp i Profil (cleanCloudOrphans()).
     // Steg 5b: Push user_goals
     if(userGoals.length){
       const {error}=await supa.from('user_goals').upsert(userGoals.map(g=>({
@@ -4624,7 +4873,7 @@ async function syncToCloud(silent){
       })));
       if(error) console.warn('Goals sync failed (kör supabase-schema-v2.sql om kolumner saknas):',error);
     }
-    if(!silent && cloudLoadComplete) await deleteCloudOrphans('user_goals',userGoals.map(g=>g.id),uid);
+    // (radering flyttad till separat "Städa moln"-knapp — se cleanCloudOrphans)
     // Steg 5c: Push custom routines (egna rutiner, 1-5 st)
     if(customRoutines.length){
       const {error}=await supa.from('routines').upsert(customRoutines.map(r=>({
@@ -4633,7 +4882,7 @@ async function syncToCloud(silent){
       })));
       if(error) console.warn('Routines sync failed (kör supabase-migrations.sql om tabell saknas):',error);
     }
-    if(!silent && cloudLoadComplete) await deleteCloudOrphans('routines',customRoutines.map(r=>r.id),uid);
+    // (radering flyttad till "Städa moln"-knapp)
     // Steg 5d: Push routine_logs
     // routineLogs är ett dict {date:{key:score}} — platta ut till rader
     const rlRows=[];
@@ -4693,7 +4942,7 @@ async function syncToCloud(silent){
       })));
       if(error) throw error;
     }
-    if(!silent && cloudLoadComplete) await deleteCloudOrphans('workout_history',workoutHistory.map(w=>w.id),uid);
+    // (radering flyttad till "Städa moln"-knapp)
     const now=new Date();
     localStorage.setItem('alpinfys_last_sync',now.toISOString());
     if(!silent) setSyncStatus('✓ Synkat till molnet '+now.toLocaleTimeString('sv-SE'),'ok');
@@ -9759,7 +10008,7 @@ renderStreak();
 renderPeakScore();
 renderCalendar();
 renderWeekSchedule();
-checkAuth().then(ok=>{if(ok){renderProfileUser();loadFromCloud(true);}});
+checkAuth().then(ok=>{if(ok){renderProfileUser();loadFromCloud(true).then(()=>{ setTimeout(maybeCreateDailySnapshot,3000); });}});
 // Hantera ?strava=connected/error i URL:n (efter OAuth-redirect)
 handleStravaRedirect();
 window.addEventListener('load',()=>setTimeout(drawCharts,100));
