@@ -319,6 +319,52 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <input id="auth-email" class="field-input" type="email" placeholder="din@email.se" inputmode="email" autocomplete="email">
     <button id="auth-submit" class="btn-primary" onclick="sendMagicLink()"><i class="ti ti-mail"></i> Skicka inloggningslänk</button>
     <div id="auth-message" style="font-size:13px;text-align:center;min-height:18px;line-height:1.4"></div>
+    <button id="pwa-install-btn" class="btn-ghost" onclick="triggerPwaInstall()" style="display:none;margin-top:18px;font-size:12px;color:var(--text-2);border-color:var(--border);gap:6px">
+      <i class="ti ti-device-mobile" style="font-size:14px"></i> <span id="pwa-install-btn-text">Installera på hemskärmen</span>
+    </button>
+    <div id="pwa-install-hint" style="display:none;font-size:11px;color:var(--text-3);text-align:center;line-height:1.5;margin-top:4px">💡 Slipper skriva in email nästa gång — appen kommer ihåg dig som en riktig app.</div>
+  </div>
+</div>
+
+<!-- iOS installations-guide (Apple tillåter inte programmatisk install på iPhone) -->
+<div class="modal" id="m-ios-install" onclick="closeBg(event,'m-ios-install')">
+  <div class="modal-sheet"><div class="modal-handle"></div>
+    <div class="modal-title" style="display:flex;align-items:center;gap:8px">📱 Installera på iPhone</div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.55;margin-bottom:16px">
+      iPhone tillåter tyvärr inte att appar installeras med ett knapptryck — du gör det själv via Safari på 3 sekunder:
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <div style="background:var(--accent);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">1</div>
+        <div style="flex:1;font-size:13px;line-height:1.5">
+          Se till att du är i <b>Safari</b> (inte Chrome). Om appen är öppen i Chrome — kopiera länken och öppna i Safari.
+        </div>
+      </div>
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <div style="background:var(--accent);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">2</div>
+        <div style="flex:1;font-size:13px;line-height:1.5">
+          Tryck på <b>Dela-knappen</b> nere i mitten på skärmen: <span style="display:inline-flex;align-items:center;justify-content:center;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;width:28px;height:28px;font-size:15px;vertical-align:middle">
+            <svg width="14" height="16" viewBox="0 0 14 16" fill="none" style="display:block"><path d="M7 1v10M4 4l3-3 3 3M2 8v6h10V8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <div style="background:var(--accent);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">3</div>
+        <div style="flex:1;font-size:13px;line-height:1.5">
+          Scrolla ner i menyn som öppnas och tryck <b>"Lägg till på hemskärmen"</b> <span style="display:inline-flex;align-items:center;justify-content:center;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;width:28px;height:28px;font-size:15px;vertical-align:middle">➕</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <div style="background:var(--accent-3);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">✓</div>
+        <div style="flex:1;font-size:13px;line-height:1.5">
+          Bekräfta namnet "Peak Fitness" och tryck <b>Lägg till</b>. Klart! Appen dyker upp på din hemskärm med bergs-ikonen ⛰️
+        </div>
+      </div>
+    </div>
+    <div style="background:var(--surface-2);border-radius:8px;padding:10px 12px;margin-top:16px;font-size:11px;color:var(--text-3);line-height:1.5">
+      💡 Efter installation loggar du in <b>en</b> gång med magic link — sedan minns appen dig och du öppnar den bara som vilken annan app som helst.
+    </div>
+    <button class="btn-ghost" onclick="closeModal('m-ios-install')" style="margin-top:12px;width:100%">Stäng</button>
   </div>
 </div>
 
@@ -1567,6 +1613,84 @@ try{
     supa=window.supabase.createClient(window.SUPABASE_CONFIG.url,window.SUPABASE_CONFIG.anonKey);
   }
 }catch(e){console.warn('Supabase init failed:',e);}
+
+/* ========== PWA INSTALL (Android programmatiskt, iOS visar guide) ========== */
+let _deferredPwaPrompt=null;
+
+// Android/Chrome fångar upp installation-prompten så vi kan trigga den senare
+window.addEventListener('beforeinstallprompt',(e)=>{
+  e.preventDefault();
+  _deferredPwaPrompt=e;
+  updatePwaButtonVisibility();
+});
+// När installation lyckats — dölj knappen
+window.addEventListener('appinstalled',()=>{
+  _deferredPwaPrompt=null;
+  updatePwaButtonVisibility();
+});
+
+function isIosPlatform(){
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent) && !window.MSStream;
+}
+function isAndroidPlatform(){
+  return /Android/i.test(navigator.userAgent);
+}
+function isPwaStandalone(){
+  return window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone===true; // iOS Safari
+}
+
+function updatePwaButtonVisibility(){
+  const btn=document.getElementById('pwa-install-btn');
+  const hint=document.getElementById('pwa-install-hint');
+  const label=document.getElementById('pwa-install-btn-text');
+  if(!btn) return;
+  // Redan installerad → dölj helt
+  if(isPwaStandalone()){ btn.style.display='none'; if(hint) hint.style.display='none'; return; }
+  // iOS Safari → visa knapp som öppnar guide
+  if(isIosPlatform()){
+    btn.style.display='';
+    if(hint) hint.style.display='';
+    if(label) label.textContent='Installera på iPhone';
+    return;
+  }
+  // Android/Chrome — visa knapp bara om prompt är tillgänglig
+  if(_deferredPwaPrompt){
+    btn.style.display='';
+    if(hint) hint.style.display='';
+    if(label) label.textContent=isAndroidPlatform()?'Installera på Android':'Installera app';
+    return;
+  }
+  // Övriga (desktop Firefox, iOS Chrome utan prompt-support etc)
+  btn.style.display='none';
+  if(hint) hint.style.display='none';
+}
+
+async function triggerPwaInstall(){
+  if(_deferredPwaPrompt){
+    // Android/Chrome: visa native install-dialog
+    try{
+      _deferredPwaPrompt.prompt();
+      await _deferredPwaPrompt.userChoice;
+    }catch(e){}
+    _deferredPwaPrompt=null;
+    updatePwaButtonVisibility();
+    return;
+  }
+  if(isIosPlatform()){
+    openModal('m-ios-install');
+    return;
+  }
+  // Fallback: kan inte trigga install, öppna iOS-guiden ändå med extra text
+  openModal('m-ios-install');
+}
+
+// Uppdatera knappen vid initial page load
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded',updatePwaButtonVisibility);
+}else{
+  updatePwaButtonVisibility();
+}
 
 async function checkAuth(){
   if(!supa){showAuthOverlay('Kunde inte ladda Supabase. Kolla att supabase-config.js finns och att du kör appen via http:// (inte file://).');return false;}
