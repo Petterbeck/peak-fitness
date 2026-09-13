@@ -315,9 +315,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
   <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px">
     <div style="font-size:14px;color:var(--text-1);text-align:center;margin-bottom:4px;font-weight:600">Logga in</div>
-    <div style="font-size:12px;color:var(--text-2);text-align:center;margin-bottom:8px;line-height:1.5">Vi skickar en inloggningslänk till din e-post — inget lösenord behövs.</div>
+    <div style="font-size:12px;color:var(--text-2);text-align:center;margin-bottom:8px;line-height:1.5">Vi skickar en <b>6-siffrig kod</b> till din e-post — du behöver aldrig lämna appen.</div>
     <input id="auth-email" class="field-input" type="email" placeholder="din@email.se" inputmode="email" autocomplete="email">
-    <button id="auth-submit" class="btn-primary" onclick="sendMagicLink()"><i class="ti ti-mail"></i> Skicka inloggningslänk</button>
+    <button id="auth-submit" class="btn-primary" onclick="sendMagicLink()"><i class="ti ti-mail"></i> Skicka inloggningskod</button>
+    <div id="auth-otp-wrap" style="display:none;flex-direction:column;gap:8px">
+      <input id="auth-otp" class="field-input" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" placeholder="123456" style="text-align:center;font-size:22px;letter-spacing:8px;font-family:monospace"
+        oninput="if(this.value.replace(/\D/g,'').length===6){verifyOtpCode()}"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();verifyOtpCode()}">
+      <button id="auth-verify" class="btn-primary" onclick="verifyOtpCode()"><i class="ti ti-check"></i> Verifiera kod</button>
+      <button id="auth-resend" class="btn-ghost" onclick="restartLoginFlow()" style="font-size:12px">← Skicka till en annan e-post</button>
+    </div>
     <div id="auth-message" style="font-size:13px;text-align:center;min-height:18px;line-height:1.4"></div>
     <button id="pwa-install-btn" class="btn-ghost" onclick="triggerPwaInstall()" style="display:none;margin-top:18px;font-size:12px;color:var(--text-2);border-color:var(--border);gap:6px">
       <i class="ti ti-device-mobile" style="font-size:14px"></i> <span id="pwa-install-btn-text">Installera på hemskärmen</span>
@@ -1744,19 +1751,73 @@ async function sendMagicLink(){
       msg.style.color='#e8200a';
       msg.textContent='Fel: '+error.message;
       btn.disabled=false;
-      btn.innerHTML='<i class="ti ti-mail"></i> Skicka inloggningslänk';
+      btn.innerHTML='<i class="ti ti-mail"></i> Skicka inloggningskod';
     }else{
       msg.style.color='var(--accent-3)';
-      msg.innerHTML='✓ Mail skickat till <b>'+email+'</b>.<br>Klicka länken i mailet för att logga in.';
+      msg.innerHTML='✓ Mail skickat till <b>'+email+'</b>.<br>Skriv in <b>6-siffriga koden</b> från mailet nedan.';
       emailInput.disabled=true;
       btn.style.display='none';
+      // Visa OTP-input och sätt fokus
+      const otpWrap=document.getElementById('auth-otp-wrap');
+      if(otpWrap) otpWrap.style.display='flex';
+      const otpInput=document.getElementById('auth-otp');
+      if(otpInput){ otpInput.focus(); }
     }
   }catch(e){
     msg.style.color='#e8200a';
     msg.textContent='Något gick fel: '+e.message;
     btn.disabled=false;
-    btn.innerHTML='<i class="ti ti-mail"></i> Skicka inloggningslänk';
+    btn.innerHTML='<i class="ti ti-mail"></i> Skicka inloggningskod';
   }
+}
+
+async function verifyOtpCode(){
+  if(!supa) return;
+  const emailInput=document.getElementById('auth-email');
+  const otpInput=document.getElementById('auth-otp');
+  const btn=document.getElementById('auth-verify');
+  const msg=document.getElementById('auth-message');
+  const email=(emailInput.value||'').trim().toLowerCase();
+  const token=(otpInput.value||'').trim().replace(/\s+/g,'');
+  if(!/^\d{6}$/.test(token)){
+    msg.style.color='#e8200a';
+    msg.textContent='Ange 6-siffrig kod från mailet';
+    return;
+  }
+  btn.disabled=true;
+  btn.innerHTML='<i class="ti ti-loader-2"></i> Verifierar...';
+  msg.textContent='';
+  try{
+    const {error}=await supa.auth.verifyOtp({email,token,type:'email'});
+    if(error){
+      msg.style.color='#e8200a';
+      msg.textContent='Fel: '+error.message;
+      btn.disabled=false;
+      btn.innerHTML='<i class="ti ti-check"></i> Verifiera kod';
+    }else{
+      msg.style.color='var(--accent-3)';
+      msg.innerHTML='✓ Inloggad! Laddar…';
+      setTimeout(()=>location.reload(),300);
+    }
+  }catch(e){
+    msg.style.color='#e8200a';
+    msg.textContent='Något gick fel: '+e.message;
+    btn.disabled=false;
+    btn.innerHTML='<i class="ti ti-check"></i> Verifiera kod';
+  }
+}
+
+function restartLoginFlow(){
+  document.getElementById('auth-otp').value='';
+  document.getElementById('auth-otp-wrap').style.display='none';
+  const emailInput=document.getElementById('auth-email');
+  emailInput.disabled=false;
+  const btn=document.getElementById('auth-submit');
+  btn.style.display='';
+  btn.disabled=false;
+  btn.innerHTML='<i class="ti ti-mail"></i> Skicka inloggningskod';
+  document.getElementById('auth-message').textContent='';
+  emailInput.focus();
 }
 
 async function logout(){
