@@ -3,8 +3,8 @@
 // API-nyckeln är hemlig (env var OPENAI_API_KEY på Vercel).
 // Bara inloggade Supabase-användare får använda — verifieras via JWT.
 
-const SUPABASE_URL = 'https://xywrlqqvdptafunsqebi.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5d3JscXF2ZHB0YWZ1bnNxZWJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NTM3MjQsImV4cCI6MjA5NDQyOTcyNH0.3O3drJ_bXf1__MjOHjRqj_AvxlBT1MN9K8r3iThoxlE';
+const SUPABASE_URL = 'https://nabylfjkuxoucliedhmz.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5hYnlsZmprdXhvdWNsaWVkaG16Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyOTExNTksImV4cCI6MjEwNDg2NzE1OX0.Rvk004ASwjHHid36xLZqbpxOzl8OsyvN17IDlQBeowI';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

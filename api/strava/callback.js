@@ -2,7 +2,7 @@
 // Tar emot OAuth-code från Strava, byter den mot access+refresh-tokens, och sparar
 // dem i Supabase via service_role. Redirectar sedan tillbaka till appen.
 
-const SUPABASE_URL = 'https://xywrlqqvdptafunsqebi.supabase.co';
+const SUPABASE_URL = 'https://nabylfjkuxoucliedhmz.supabase.co';
 const APP_URL = 'https://peak-fitness-psi.vercel.app';
 
 export default async function handler(req, res) {
