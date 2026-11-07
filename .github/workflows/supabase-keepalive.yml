@@ -1,0 +1,27 @@
+name: Supabase keepalive
+
+# Pingar Supabase-projektet två gånger i veckan för att återställa
+# inaktivitetstimern (Free-tier pausar efter 7 dagars tystnad).
+# Anon-keyn är publik per design — ingen secret behövs.
+
+on:
+  schedule:
+    # Måndag + torsdag kl 06:00 UTC (07-08 svensk tid). Max 4 dagar mellan pings.
+    - cron: '0 6 * * 1,4'
+  workflow_dispatch:  # tillåter manuell körning från Actions-fliken
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST
+        run: |
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5hYnlsZmprdXhvdWNsaWVkaG16Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyOTExNTksImV4cCI6MjEwNDg2NzE1OX0.Rvk004ASwjHHid36xLZqbpxOzl8OsyvN17IDlQBeowI" \
+            "https://nabylfjkuxoucliedhmz.supabase.co/rest/v1/profiles?select=id&limit=1")
+          echo "Supabase response: HTTP $RESPONSE"
+          if [ "$RESPONSE" != "200" ]; then
+            echo "::error::Supabase keepalive misslyckades (HTTP $RESPONSE). Kolla om projektet är pausat eller raderat."
+            exit 1
+          fi
+          echo "Supabase keepalive OK"
